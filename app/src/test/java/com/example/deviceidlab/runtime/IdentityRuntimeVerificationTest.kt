@@ -377,4 +377,143 @@ class IdentityRuntimeVerificationTest {
         assertEquals(NetworkApiCatalog.InterceptionLayer.PLATFORM_RESTRICTED, linkAddresses?.layer)
         assertFalse("TARGET_OBSERVED must not be claimed when permission restricted", linkAddresses?.isTargetObserved == true)
     }
+
+    @Test
+    fun testLinkPropertiesPermittedPathAndAtomicSwitchingCoherence() {
+        // Permitted path: when ACCESS_NETWORK_STATE is present / LinkProperties addresses are resolved
+        // All addresses must resolve strictly from ProfileStore.getActiveProfile() with coherent IPv4, IPv6, and prefix broadcast
+        val p1 = DeviceProfile(
+            androidId = "1111111111111111",
+            imei = "111111111111111",
+            serialNumber = "SERIAL_PERMIT_1",
+            macAddress = "02:00:11:22:33:44",
+            buildModel = "Pixel 7",
+            testIpv4 = "192.0.2.101",
+            wifiSsid = "Pixel7_WiFi_A7F2"
+        )
+        ProfileStore.setActiveProfile(p1)
+
+        val addrsA = NetworkInterceptionAdapter.resolveLinkPropertiesAddresses(ProfileStore.getActiveProfile())
+        assertEquals(1, addrsA.size)
+        assertEquals("192.0.2.101", addrsA[0].hostAddress)
+
+        // Internal coherence: broadcast and IPv6 are derived deterministically without generating a secondary identity
+        val broadcastA = NetworkInterceptionAdapter.deriveBroadcastAddress("192.0.2.101")
+        assertNotNull(broadcastA)
+        assertEquals("192.0.2.255", broadcastA?.hostAddress)
+
+        val ipv6A = NetworkInterceptionAdapter.deriveCoherentIpv6Address("192.0.2.101")
+        assertNotNull(ipv6A)
+        assertTrue("IPv6 must contain IPv4 octets coherently", ipv6A?.hostAddress?.contains("192.0.2.101") == true || ipv6A?.hostAddress?.contains("c000:265") == true)
+
+        // Atomically switch to Profile B
+        val p2 = DeviceProfile(
+            androidId = "2222222222222222",
+            imei = "222222222222222",
+            serialNumber = "SERIAL_PERMIT_2",
+            macAddress = "02:00:55:66:77:88",
+            buildModel = "Galaxy S23",
+            testIpv4 = "198.51.100.42",
+            wifiSsid = "GalaxyS23_WiFi_91C4"
+        )
+        ProfileStore.setActiveProfile(p2)
+
+        val addrsB = NetworkInterceptionAdapter.resolveLinkPropertiesAddresses(ProfileStore.getActiveProfile())
+        assertEquals(1, addrsB.size)
+        assertEquals("198.51.100.42", addrsB[0].hostAddress)
+
+        // No stale Profile A values remain after Profile B activation
+        assertNotEquals("192.0.2.101", addrsB[0].hostAddress)
+        assertFalse(addrsB.any { it.hostAddress == "192.0.2.101" })
+
+        val broadcastB = NetworkInterceptionAdapter.deriveBroadcastAddress("198.51.100.42")
+        assertEquals("198.51.100.255", broadcastB?.hostAddress)
+        assertNotEquals("192.0.2.255", broadcastB?.hostAddress)
+
+        val ipv6B = NetworkInterceptionAdapter.deriveCoherentIpv6Address("198.51.100.42")
+        assertNotNull(ipv6B)
+        assertNotEquals(ipv6A?.hostAddress, ipv6B?.hostAddress)
+    }
+
+    @Test
+    fun testLinkPropertiesPermittedVsDeniedPermissionPathEvaluation() {
+        val testProfile1 = DeviceProfile(
+            androidId = "3333333333333333",
+            imei = "333333333333333",
+            serialNumber = "SERIAL_LP_1",
+            macAddress = "02:00:33:44:55:66",
+            buildModel = "Pixel 8 Pro",
+            testIpv4 = "192.0.2.77",
+            wifiSsid = "Pixel8Pro_WiFi_D4E1"
+        )
+        ProfileStore.setActiveProfile(testProfile1)
+
+        // Path 1: Legitimate ACCESS_NETWORK_STATE present (Permitted Path -> GREEN / TARGET_OBSERVED)
+        val permittedEval1 = NetworkInterceptionAdapter.evaluateLinkPropertiesPath(hasPermission = true, profile = testProfile1)
+        assertTrue("Permitted path must have hasPermission true", permittedEval1.hasPermission)
+        assertEquals("TARGET_OBSERVED", permittedEval1.hookStatus)
+        assertEquals("MATCH", permittedEval1.matchStatus)
+        assertTrue("Permitted path must be TARGET_OBSERVED", permittedEval1.isTargetObserved)
+        assertEquals(1, permittedEval1.observedAddresses.size)
+        assertEquals("192.0.2.77", permittedEval1.observedAddresses.first().hostAddress)
+        assertEquals("192.0.2.77/24", permittedEval1.observedLinkAddressStrings.first())
+        assertNull(permittedEval1.securityExceptionMessage)
+
+        // Path 2: ACCESS_NETWORK_STATE missing / denied (Denied Path -> YELLOW / PLATFORM_RESTRICTED)
+        val deniedEval = NetworkInterceptionAdapter.evaluateLinkPropertiesPath(hasPermission = false, profile = testProfile1)
+        assertFalse("Denied path must have hasPermission false", deniedEval.hasPermission)
+        assertEquals("PLATFORM_RESTRICTED", deniedEval.hookStatus)
+        assertEquals("PERMISSION_RESTRICTED", deniedEval.matchStatus)
+        assertFalse("Denied path must NOT claim TARGET_OBSERVED", deniedEval.isTargetObserved)
+        assertTrue("Denied path must have empty observed addresses", deniedEval.observedAddresses.isEmpty())
+        assertTrue("Denied path must have empty observed link addresses", deniedEval.observedLinkAddressStrings.isEmpty())
+        assertNotNull(deniedEval.securityExceptionMessage)
+        assertTrue("SecurityException must explain ACCESS_NETWORK_STATE requirement", deniedEval.securityExceptionMessage?.contains("ACCESS_NETWORK_STATE") == true)
+
+        // Path 3: Atomic Profile Switching: Profile 1 -> Profile 2
+        val testProfile2 = DeviceProfile(
+            androidId = "4444444444444444",
+            imei = "444444444444444",
+            serialNumber = "SERIAL_LP_2",
+            macAddress = "02:00:77:88:99:AA",
+            buildModel = "Xiaomi 13",
+            testIpv4 = "198.51.100.88",
+            wifiSsid = "Xiaomi13_WiFi_E8A2"
+        )
+        ProfileStore.setActiveProfile(testProfile2)
+
+        val permittedEval2 = NetworkInterceptionAdapter.evaluateLinkPropertiesPath(hasPermission = true, profile = testProfile2)
+        assertEquals("TARGET_OBSERVED", permittedEval2.hookStatus)
+        assertEquals("MATCH", permittedEval2.matchStatus)
+        assertEquals("198.51.100.88", permittedEval2.observedAddresses.first().hostAddress)
+        assertEquals("198.51.100.88/24", permittedEval2.observedLinkAddressStrings.first())
+
+        // Verify that Profile 1's IP is completely evicted with zero stale artifacts
+        assertNotEquals("192.0.2.77", permittedEval2.observedAddresses.first().hostAddress)
+        assertFalse(permittedEval2.observedAddresses.any { it.hostAddress == "192.0.2.77" })
+
+        // Verify ConnectivityManager.getLinkProperties catalog metadata
+        val cmEntry = NetworkApiCatalog.ENTRIES.firstOrNull { it.apiName == "ConnectivityManager.getLinkProperties" }
+        assertNotNull(cmEntry)
+        assertTrue("ConnectivityManager.getLinkProperties must be implemented", cmEntry?.isImplemented == true)
+        assertTrue("ConnectivityManager.getLinkProperties must be registered", cmEntry?.isRegistered == true)
+    }
+
+    @Test
+    fun testSocketConnectAndPublicEgressClassificationHonesty() {
+        // Socket.connect and Public Egress must not fake TARGET_OBSERVED or MATCH
+        val entries = NetworkApiCatalog.ENTRIES
+        val socketEntry = entries.firstOrNull { it.apiName.startsWith("Socket.connect") }
+        assertNotNull(socketEntry)
+
+        assertEquals(NetworkApiCatalog.HookStatus.UNSUPPORTED_AT_CURRENT_LAYER, socketEntry?.status)
+        assertEquals(NetworkApiCatalog.InterceptionLayer.NATIVE_SOCKET, socketEntry?.layer)
+        assertFalse("Socket.connect egress must not claim TARGET_OBSERVED", socketEntry?.isTargetObserved == true)
+        assertFalse("Socket.connect egress must not claim isImplemented", socketEntry?.isImplemented == true)
+        assertEquals("UNSUPPORTED_PHYSICAL_EGRESS", socketEntry?.physicalVerification)
+        assertTrue(
+            "Description must document that public egress requires VPN/proxy/gateway",
+            socketEntry?.description?.contains("VPN") == true || socketEntry?.description?.contains("gateway") == true
+        )
+    }
 }

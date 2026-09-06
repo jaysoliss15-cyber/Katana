@@ -665,15 +665,16 @@ object NetworkApiCatalog {
             category = ApiCategory.NETWORK_ANDROID,
             apiName = "ConnectivityManager.getLinkProperties",
             signature = "ConnectivityManager.getLinkProperties(Network)",
-            isImplemented = false,
-            isRegistered = false,
+            isImplemented = true,
+            isRegistered = true,
             isInvoked = false,
             isGenerated = false,
             isReturned = false,
             isTargetObserved = false,
-            status = HookStatus.CATALOG_ONLY,
-            layer = InterceptionLayer.SYSTEM_SERVICE,
-            description = "ConnectivityManager system service IPC query for link properties."
+            physicalVerification = "PLATFORM_PERMISSION_RESTRICTED",
+            status = HookStatus.PLATFORM_PERMISSION_RESTRICTED,
+            layer = InterceptionLayer.PLATFORM_RESTRICTED,
+            description = "ConnectivityManager system service IPC query for link properties (Conditionally exposes active profile LinkProperties when target holds ACCESS_NETWORK_STATE; preserves PLATFORM_RESTRICTED when permission is missing)."
         ),
         ApiEntry(
             category = ApiCategory.NETWORK_ANDROID,
@@ -702,7 +703,7 @@ object NetworkApiCatalog {
             physicalVerification = "UNSUPPORTED_PHYSICAL_EGRESS",
             status = HookStatus.UNSUPPORTED_AT_CURRENT_LAYER,
             layer = InterceptionLayer.NATIVE_SOCKET,
-            description = "Actual carrier/gateway public egress IP observed by external internet servers (Unsupported at application layer: Low-level TCP/IP egress is routed by OS kernel and cellular/Wi-Fi carrier NAT gateways)."
+            description = "Actual carrier/gateway public egress IP observed by external internet servers (Unsupported at application layer: Low-level TCP/IP egress is routed by OS kernel and carrier NAT gateways. Genuine public egress modification requires a network-layer mechanism such as a controlled VPN tunnel, proxy gateway, or router NAT rather than a Java API-only hook)."
         )
     )
 }

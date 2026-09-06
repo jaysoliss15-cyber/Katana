@@ -881,7 +881,39 @@ class NPatchHookEntry : IXposedHookLoadPackage, IXposedHookZygoteInit {
             )
         } catch (_: Throwable) {}
 
-        // 8. LinkProperties.getAddresses()
+        // 8. ConnectivityManager.getLinkProperties() & LinkProperties APIs
+        try {
+            XposedHelpers.findAndHookMethod(
+                "android.net.ConnectivityManager",
+                lpparam.classLoader,
+                "getLinkProperties",
+                "android.net.Network",
+                object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        if (!isInterceptionEnabled()) return
+                        if (!checkAccessNetworkState(param.thisObject) || param.throwable is SecurityException) {
+                            return
+                        }
+                        try {
+                            val resolver = resolveContentResolver(param.thisObject)
+                            val profile = queryDynamicProfile(resolver)
+                            val synthAddr = InetAddress.getByName(profile.syntheticIp)
+                            val linkAddr = createSyntheticLinkAddress(synthAddr, 24)
+                            val lp = param.result ?: Class.forName("android.net.LinkProperties").getDeclaredConstructor().newInstance()
+                            if (linkAddr != null) {
+                                try {
+                                    val addMethod = lp.javaClass.getMethod("addLinkAddress", Class.forName("android.net.LinkAddress"))
+                                    addMethod.invoke(lp, linkAddr)
+                                } catch (_: Throwable) {}
+                            }
+                            param.throwable = null
+                            param.result = lp
+                        } catch (_: Throwable) {}
+                    }
+                }
+            )
+        } catch (_: Throwable) {}
+
         try {
             XposedHelpers.findAndHookMethod(
                 "android.net.LinkProperties",
@@ -890,6 +922,7 @@ class NPatchHookEntry : IXposedHookLoadPackage, IXposedHookZygoteInit {
                 object : XC_MethodHook() {
                     override fun afterHookedMethod(param: MethodHookParam) {
                         if (!isInterceptionEnabled()) return
+                        if (!checkAccessNetworkState(null)) return
                         try {
                             val resolver = resolveContentResolver(null)
                             val profile = queryDynamicProfile(resolver)
@@ -900,6 +933,98 @@ class NPatchHookEntry : IXposedHookLoadPackage, IXposedHookZygoteInit {
                 }
             )
         } catch (_: Throwable) {}
+
+        try {
+            XposedHelpers.findAndHookMethod(
+                "android.net.LinkProperties",
+                lpparam.classLoader,
+                "getLinkAddresses",
+                object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        if (!isInterceptionEnabled()) return
+                        if (!checkAccessNetworkState(null)) return
+                        try {
+                            val resolver = resolveContentResolver(null)
+                            val profile = queryDynamicProfile(resolver)
+                            val synthAddr = InetAddress.getByName(profile.syntheticIp)
+                            val linkAddr = createSyntheticLinkAddress(synthAddr, 24)
+                            if (linkAddr != null) {
+                                param.result = listOf(linkAddr)
+                            }
+                        } catch (_: Throwable) {}
+                    }
+                }
+            )
+        } catch (_: Throwable) {}
+    }
+
+    private fun checkAccessNetworkState(thisObj: Any?): Boolean {
+        val ctx = resolveContext(thisObj)
+        if (ctx != null) {
+            return try {
+                ctx.checkCallingOrSelfPermission("android.permission.ACCESS_NETWORK_STATE") ==
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+            } catch (_: Throwable) { false }
+        }
+        return false
+    }
+
+    private fun resolveContext(thisObj: Any?): Context? {
+        if (thisObj != null) {
+            try {
+                val ctx = XposedHelpers.getObjectField(thisObj, "mContext") as? Context
+                if (ctx != null) return ctx
+            } catch (_: Throwable) {}
+        }
+        try {
+            val activityThreadClass = Class.forName("android.app.ActivityThread")
+            val currentAppMethod = activityThreadClass.getMethod("currentApplication")
+            return currentAppMethod.invoke(null) as? Context
+        } catch (_: Throwable) {}
+        return null
+    }
+
+    private fun createSyntheticLinkAddress(address: InetAddress, prefixLength: Int = 24): Any? {
+        return try {
+            val linkAddressClass = Class.forName("android.net.LinkAddress")
+            for (ctor in linkAddressClass.declaredConstructors) {
+                try {
+                    ctor.isAccessible = true
+                    val params = ctor.parameterTypes
+                    if (params.size == 2 &&
+                        params[0].isAssignableFrom(InetAddress::class.java) &&
+                        (params[1] == Int::class.javaPrimitiveType || params[1] == java.lang.Integer::class.java)
+                    ) {
+                        return ctor.newInstance(address, prefixLength)
+                    }
+                } catch (_: Throwable) {}
+            }
+            for (ctor in linkAddressClass.declaredConstructors) {
+                try {
+                    ctor.isAccessible = true
+                    val params = ctor.parameterTypes
+                    if (params.size == 4 &&
+                        params[0].isAssignableFrom(InetAddress::class.java) &&
+                        (params[1] == Int::class.javaPrimitiveType || params[1] == java.lang.Integer::class.java)
+                    ) {
+                        return ctor.newInstance(address, prefixLength, 0, 0)
+                    }
+                } catch (_: Throwable) {}
+            }
+            for (ctor in linkAddressClass.declaredConstructors) {
+                try {
+                    ctor.isAccessible = true
+                    val params = ctor.parameterTypes
+                    if (params.size == 1 && params[0] == String::class.java) {
+                        val host = address.hostAddress ?: "198.51.100.42"
+                        return ctor.newInstance("$host/$prefixLength")
+                    }
+                } catch (_: Throwable) {}
+            }
+            null
+        } catch (_: Throwable) {
+            null
+        }
     }
 
     private fun getOrInitXPrefs(): XSharedPreferences? {

@@ -514,15 +514,177 @@ object NetworkInterceptionAdapter {
         } catch (_: Throwable) {}
     }
 
+    fun resolveLinkPropertiesAddresses(profile: com.example.deviceidlab.model.DeviceProfile = HostBridge.resolveActiveProfile()): List<InetAddress> {
+        return listOf(InetAddress.getByName(profile.testIpv4))
+    }
+
+    fun deriveBroadcastAddress(ipv4Str: String): InetAddress? {
+        return try {
+            val parts = ipv4Str.split(".")
+            if (parts.size == 4) {
+                InetAddress.getByName("${parts[0]}.${parts[1]}.${parts[2]}.255")
+            } else null
+        } catch (_: Throwable) { null }
+    }
+
+    fun deriveCoherentIpv6Address(ipv4Str: String): InetAddress? {
+        return try {
+            InetAddress.getByName("2001:db8::$ipv4Str")
+        } catch (_: Throwable) { null }
+    }
+
+    fun checkAccessNetworkStatePermission(cm: Any? = null): Boolean {
+        val context = try {
+            if (cm != null) de.robv.android.xposed.XposedHelpers.getObjectField(cm, "mContext") as? android.content.Context else null
+        } catch (_: Throwable) { null }
+            ?: try {
+                val activityThreadClass = Class.forName("android.app.ActivityThread")
+                val currentAppMethod = activityThreadClass.getMethod("currentApplication")
+                currentAppMethod.invoke(null) as? android.content.Context
+            } catch (_: Throwable) { null }
+
+        if (context != null) {
+            return try {
+                context.checkCallingOrSelfPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) ==
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+            } catch (_: Throwable) { false }
+        }
+        return false
+    }
+
+    fun createPopulatedLinkProperties(
+        profile: com.example.deviceidlab.model.DeviceProfile = HostBridge.resolveActiveProfile(),
+        existingLp: Any? = null
+    ): Any? {
+        return try {
+            val lp = existingLp ?: Class.forName("android.net.LinkProperties").getDeclaredConstructor().newInstance()
+            try {
+                val setIface = lp.javaClass.getMethod("setInterfaceName", String::class.java)
+                setIface.invoke(lp, "wlan0")
+            } catch (_: Throwable) {
+                try {
+                    de.robv.android.xposed.XposedHelpers.setObjectField(lp, "mIfaceName", "wlan0")
+                } catch (_: Throwable) {}
+            }
+            try {
+                val synthAddr = InetAddress.getByName(profile.testIpv4)
+                val linkAddr = createSyntheticLinkAddress(synthAddr, 24)
+                if (linkAddr != null) {
+                    val addMethod = lp.javaClass.getMethod("addLinkAddress", Class.forName("android.net.LinkAddress"))
+                    addMethod.invoke(lp, linkAddr)
+                }
+            } catch (_: Throwable) {}
+            lp
+        } catch (_: Throwable) {
+            existingLp
+        }
+    }
+
+    data class LinkPropertiesEvaluation(
+        val hasPermission: Boolean,
+        val observedAddresses: List<InetAddress>,
+        val observedLinkAddressStrings: List<String>,
+        val hookStatus: String,
+        val matchStatus: String,
+        val isTargetObserved: Boolean,
+        val securityExceptionMessage: String? = null
+    )
+
+    fun evaluateLinkPropertiesPath(
+        hasPermission: Boolean,
+        profile: com.example.deviceidlab.model.DeviceProfile = HostBridge.resolveActiveProfile()
+    ): LinkPropertiesEvaluation {
+        if (!hasPermission) {
+            val ex = SecurityException("Neither user nor current process has android.permission.ACCESS_NETWORK_STATE.")
+            return LinkPropertiesEvaluation(
+                hasPermission = false,
+                observedAddresses = emptyList(),
+                observedLinkAddressStrings = emptyList(),
+                hookStatus = "PLATFORM_RESTRICTED",
+                matchStatus = "PERMISSION_RESTRICTED",
+                isTargetObserved = false,
+                securityExceptionMessage = ex.message
+            )
+        }
+
+        val addresses = resolveLinkPropertiesAddresses(profile)
+        val linkAddressStrs = addresses.map { "${it.hostAddress}/24" }
+        val matchesExpected = addresses.any { it.hostAddress == profile.testIpv4 }
+
+        return LinkPropertiesEvaluation(
+            hasPermission = true,
+            observedAddresses = addresses,
+            observedLinkAddressStrings = linkAddressStrs,
+            hookStatus = if (matchesExpected) "TARGET_OBSERVED" else "MISMATCH",
+            matchStatus = if (matchesExpected) "MATCH" else "MISMATCH",
+            isTargetObserved = matchesExpected,
+            securityExceptionMessage = null
+        )
+    }
+
     private fun hookLinkPropertiesApis(classLoader: ClassLoader, packageName: String, processName: String, pid: Int) {
-        // LinkProperties.getAddresses()
+        // 1. ConnectivityManager.getLinkProperties(Network)
+        try {
+            XposedHelpers.findAndHookMethod(
+                "android.net.ConnectivityManager",
+                classLoader,
+                "getLinkProperties",
+                "android.net.Network",
+                object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        val hasPerm = checkAccessNetworkStatePermission(param.thisObject)
+                        if (!hasPerm || param.throwable is SecurityException) {
+                            HostBridge.reportInterceptionStage(
+                                targetPkg = packageName, targetProc = processName, targetPid = pid,
+                                apiName = "ConnectivityManager.getLinkProperties",
+                                stage = NPatchAuditManager.PLATFORM_RESTRICTED,
+                                origVal = "SecurityException / ACCESS_NETWORK_STATE unavailable",
+                                injectedVal = "NONE",
+                                returnedVal = "RESTRICTED"
+                            )
+                            return
+                        }
+                        val profile = HostBridge.resolveActiveProfile()
+                        val lp = createPopulatedLinkProperties(profile, param.result)
+                        if (lp != null) {
+                            param.throwable = null
+                            param.result = lp
+                        }
+                        HostBridge.reportInterceptionStage(
+                            targetPkg = packageName, targetProc = processName, targetPid = pid,
+                            apiName = "ConnectivityManager.getLinkProperties",
+                            stage = NPatchAuditManager.TARGET_OBSERVED,
+                            origVal = "Original LinkProperties",
+                            injectedVal = profile.testIpv4,
+                            returnedVal = profile.testIpv4
+                        )
+                    }
+                }
+            )
+            HostBridge.reportInterceptionStage(
+                packageName, processName, pid,
+                "ConnectivityManager.getLinkProperties",
+                NPatchAuditManager.HOOK_REGISTERED
+            )
+        } catch (_: Throwable) {}
+
+        // 2. LinkProperties.getAddresses()
         try {
             XposedHelpers.findAndHookMethod("android.net.LinkProperties", classLoader, "getAddresses", object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
+                    val hasPerm = checkAccessNetworkStatePermission()
+                    if (!hasPerm) {
+                        HostBridge.reportInterceptionStage(
+                            targetPkg = packageName, targetProc = processName, targetPid = pid,
+                            apiName = "LinkProperties.getAddresses()", stage = NPatchAuditManager.PLATFORM_RESTRICTED,
+                            origVal = "ACCESS_NETWORK_STATE restricted", injectedVal = "NONE", returnedVal = "RESTRICTED"
+                        )
+                        return
+                    }
                     val profile = HostBridge.resolveActiveProfile()
-                    val synthAddr = InetAddress.getByName(profile.testIpv4)
+                    val addresses = resolveLinkPropertiesAddresses(profile)
                     param.throwable = null
-                    param.result = listOf(synthAddr)
+                    param.result = addresses
                     HostBridge.reportInterceptionStage(
                         targetPkg = packageName, targetProc = processName, targetPid = pid,
                         apiName = "LinkProperties.getAddresses()", stage = NPatchAuditManager.TARGET_OBSERVED,
@@ -533,10 +695,19 @@ object NetworkInterceptionAdapter {
             HostBridge.reportInterceptionStage(packageName, processName, pid, "LinkProperties.getAddresses()", NPatchAuditManager.HOOK_REGISTERED)
         } catch (_: Throwable) {}
 
-        // LinkProperties.getLinkAddresses()
+        // 3. LinkProperties.getLinkAddresses()
         try {
             XposedHelpers.findAndHookMethod("android.net.LinkProperties", classLoader, "getLinkAddresses", object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
+                    val hasPerm = checkAccessNetworkStatePermission()
+                    if (!hasPerm) {
+                        HostBridge.reportInterceptionStage(
+                            targetPkg = packageName, targetProc = processName, targetPid = pid,
+                            apiName = "LinkProperties.getLinkAddresses()", stage = NPatchAuditManager.PLATFORM_RESTRICTED,
+                            origVal = "ACCESS_NETWORK_STATE restricted", injectedVal = "NONE", returnedVal = "RESTRICTED"
+                        )
+                        return
+                    }
                     val profile = HostBridge.resolveActiveProfile()
                     val synthAddr = InetAddress.getByName(profile.testIpv4)
                     val linkAddr = createSyntheticLinkAddress(synthAddr, 24)
@@ -555,7 +726,7 @@ object NetworkInterceptionAdapter {
         } catch (_: Throwable) {}
     }
 
-    private fun createSyntheticLinkAddress(address: InetAddress, prefixLength: Int = 24): Any? {
+    fun createSyntheticLinkAddress(address: InetAddress, prefixLength: Int = 24): Any? {
         return try {
             val linkAddressClass = Class.forName("android.net.LinkAddress")
             for (ctor in linkAddressClass.declaredConstructors) {
@@ -574,8 +745,20 @@ object NetworkInterceptionAdapter {
                 try {
                     ctor.isAccessible = true
                     val params = ctor.parameterTypes
+                    if (params.size == 4 &&
+                        params[0].isAssignableFrom(InetAddress::class.java) &&
+                        (params[1] == Int::class.javaPrimitiveType || params[1] == java.lang.Integer::class.java)
+                    ) {
+                        return ctor.newInstance(address, prefixLength, 0, 0)
+                    }
+                } catch (_: Throwable) {}
+            }
+            for (ctor in linkAddressClass.declaredConstructors) {
+                try {
+                    ctor.isAccessible = true
+                    val params = ctor.parameterTypes
                     if (params.size == 1 && params[0] == String::class.java) {
-                        val host = address.hostAddress ?: "203.0.113.42"
+                        val host = address.hostAddress ?: HostBridge.resolveActiveProfile().testIpv4
                         return ctor.newInstance("$host/$prefixLength")
                     }
                 } catch (_: Throwable) {}
@@ -697,9 +880,12 @@ object NetworkInterceptionAdapter {
             XposedHelpers.setObjectField(ia, "address", address)
             XposedHelpers.setShortField(ia, "maskLength", prefixLength)
             try {
-                val broadcast = InetAddress.getByName("203.0.113.255") as? java.net.Inet4Address
-                if (broadcast != null) {
-                    XposedHelpers.setObjectField(ia, "broadcast", broadcast)
+                val host = address.hostAddress
+                if (host != null) {
+                    val broadcast = deriveBroadcastAddress(host) as? java.net.Inet4Address
+                    if (broadcast != null) {
+                        XposedHelpers.setObjectField(ia, "broadcast", broadcast)
+                    }
                 }
             } catch (_: Throwable) {}
             ia
