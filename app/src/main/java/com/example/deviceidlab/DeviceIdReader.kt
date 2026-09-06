@@ -51,4 +51,9 @@ object DeviceIdReader {
             manufacturer = Build.MANUFACTURER
         )
     }
+
+    /**
+     * Canary method intercepted by NPatch runtime hook to confirm active status.
+     */
+    fun isNpatchHookActive(): Boolean = false
 }

@@ -45,7 +45,7 @@
         <!-- Dynamic Identity ContentProvider accessible by injected apps via IPC -->
         <provider
             android:name=".provider.DeviceIdProvider"
-            android:authorities="com.example.deviceidlab.provider.deviceid"
+            android:authorities="com.example.deviceidlab.provider;com.example.deviceidlab.provider.deviceid"
             android:exported="true"
             android:multiprocess="false" />
 

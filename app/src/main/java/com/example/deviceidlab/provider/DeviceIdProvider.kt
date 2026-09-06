@@ -50,7 +50,9 @@ class DeviceIdProvider : ContentProvider() {
         const val KEY_API_NAME = "api_name"
         const val KEY_IDENTIFIER_TYPE = "identifier_type"
         const val KEY_ORIGINAL_ID = "original_id"
+        const val KEY_INJECTED_ID = "injected_id"
         const val KEY_RETURNED_ID = "returned_id"
+        const val KEY_STAGE = "stage"
 
         const val TYPE_ANDROID_ID = "ANDROID_ID"
         const val TYPE_TELEPHONY_ID = "TELEPHONY_ID"
@@ -191,6 +193,29 @@ class DeviceIdProvider : ContentProvider() {
             activeWifiBssid = activeMacAddress
             profileLifecycleState = NPatchConfig.STATE_ACTIVE
 
+            try {
+                val updatedProfile = com.example.deviceidlab.model.DeviceProfile(
+                    id = "profile_$seed",
+                    name = "Profile $seed ($activeCity)",
+                    androidId = activeAndroidTestId,
+                    imei = activeTelephonyTestId,
+                    serialNumber = activeTelephonyTestId,
+                    macAddress = activeMacAddress,
+                    testIpv4 = activeSyntheticIp,
+                    wifiSsid = activeWifiSsid,
+                    bssid = activeWifiBssid,
+                    city = activeCity,
+                    country = activeCountry,
+                    timezone = activeTimezone,
+                    latitude = activeLatitude,
+                    longitude = activeLongitude,
+                    carrierName = "Carrier $activeCity",
+                    simOperator = "310260",
+                    state = com.example.deviceidlab.model.ProfileState.ACTIVE
+                )
+                com.example.deviceidlab.runtime.ProfileStore.setActiveProfile(updatedProfile)
+            } catch (_: Throwable) {}
+
             Log.i(TAG, "[$TAG] [NPATCH] Profile synchronized: Android='$newAndroidId', Telephony='$newTelephonyId', IP='$activeSyntheticIp', City='$activeCity', Country='$activeCountry'")
 
             if (context != null) {
@@ -317,7 +342,9 @@ class DeviceIdProvider : ContentProvider() {
                     }
                 )
                 val origId = extras?.getString(KEY_ORIGINAL_ID) ?: ""
-                val retId = extras?.getString(KEY_RETURNED_ID) ?: (if (idType == TYPE_TELEPHONY_ID) activeTelephonyTestId else activeAndroidTestId)
+                val stage = extras?.getString(KEY_STAGE) ?: com.example.deviceidlab.hook.NPatchAuditManager.HOOK_INVOKED
+                val injectedVal = extras?.getString(KEY_INJECTED_ID) ?: (if (idType == TYPE_TELEPHONY_ID) activeTelephonyTestId else activeAndroidTestId)
+                val retId = extras?.getString(KEY_RETURNED_ID) ?: injectedVal
 
                 _targetProcessDetectedFlow.value = true
                 _lastTargetProcessNameFlow.value = targetProc
@@ -341,8 +368,9 @@ class DeviceIdProvider : ContentProvider() {
                     canaryIntercepted = true,
                     apiName = apiName,
                     originalId = origId,
-                    injectedId = if (idType == TYPE_TELEPHONY_ID) activeTelephonyTestId else activeAndroidTestId,
-                    returnedId = retId
+                    injectedId = injectedVal,
+                    returnedId = retId,
+                    stage = stage
                 )
 
                 Log.i(TAG, "[$TAG] [NPATCH] Interception reported [$idType]: target='$targetPkg' (PID $targetPid), api='$apiName', returnedId='$retId'")

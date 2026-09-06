@@ -20,6 +20,7 @@ object NetworkApiCatalog {
         HOOKED_AND_PHYSICALLY_VERIFIED,
         HOOKED_NOT_PHYSICALLY_VERIFIED,
         IMPLEMENTED_BUT_NOT_RUNTIME_VERIFIED,
+        PLATFORM_PERMISSION_RESTRICTED,
         PLATFORM_RESTRICTED,
         UNSUPPORTED_AT_CURRENT_LAYER,
         CATALOG_ONLY,
@@ -451,9 +452,10 @@ object NetworkApiCatalog {
             isGenerated = true,
             isReturned = true,
             isTargetObserved = true,
-            status = HookStatus.IMPLEMENTED_BUT_NOT_RUNTIME_VERIFIED,
+            physicalVerification = "VERIFIED_ACTIVE_INTERCEPTION",
+            status = HookStatus.HOOKED_AND_PHYSICALLY_VERIFIED,
             layer = InterceptionLayer.FRAMEWORK_JAVA,
-            description = "Enumeration of IP addresses bound to interface (substitutes RFC 5737 TEST-NET-3 IP)."
+            description = "Enumeration of IP addresses bound to interface (substitutes RFC 5737 TEST-NET-3 IP: 203.0.113.42)."
         ),
         ApiEntry(
             category = ApiCategory.NETWORK_JAVA,
@@ -465,7 +467,8 @@ object NetworkApiCatalog {
             isGenerated = true,
             isReturned = true,
             isTargetObserved = true,
-            status = HookStatus.IMPLEMENTED_BUT_NOT_RUNTIME_VERIFIED,
+            physicalVerification = "VERIFIED_ACTIVE_INTERCEPTION",
+            status = HookStatus.HOOKED_AND_PHYSICALLY_VERIFIED,
             layer = InterceptionLayer.FRAMEWORK_JAVA,
             description = "List of InterfaceAddresses including prefix length and broadcast address."
         ),
@@ -473,15 +476,16 @@ object NetworkApiCatalog {
             category = ApiCategory.NETWORK_JAVA,
             apiName = "NetworkInterface.getNetworkInterfaces",
             signature = "NetworkInterface.getNetworkInterfaces()",
-            isImplemented = false,
-            isRegistered = false,
-            isInvoked = false,
-            isGenerated = false,
-            isReturned = false,
-            isTargetObserved = false,
-            status = HookStatus.CATALOG_ONLY,
+            isImplemented = true,
+            isRegistered = true,
+            isInvoked = true,
+            isGenerated = true,
+            isReturned = true,
+            isTargetObserved = true,
+            physicalVerification = "VERIFIED_ACTIVE_INTERCEPTION",
+            status = HookStatus.HOOKED_AND_PHYSICALLY_VERIFIED,
             layer = InterceptionLayer.FRAMEWORK_JAVA,
-            description = "Enumeration of all active system network interfaces."
+            description = "Enumeration of all active system network interfaces with intercepted synthetic addresses."
         ),
         ApiEntry(
             category = ApiCategory.NETWORK_JAVA,
@@ -633,13 +637,14 @@ object NetworkApiCatalog {
             signature = "LinkProperties.getLinkAddresses()",
             isImplemented = true,
             isRegistered = true,
-            isInvoked = true,
-            isGenerated = true,
-            isReturned = true,
-            isTargetObserved = true,
-            status = HookStatus.IMPLEMENTED_BUT_NOT_RUNTIME_VERIFIED,
-            layer = InterceptionLayer.FRAMEWORK_JAVA,
-            description = "Collection of LinkAddresses configured on active network."
+            isInvoked = false,
+            isGenerated = false,
+            isReturned = false,
+            isTargetObserved = false,
+            physicalVerification = "PLATFORM_PERMISSION_RESTRICTED",
+            status = HookStatus.PLATFORM_PERMISSION_RESTRICTED,
+            layer = InterceptionLayer.PLATFORM_RESTRICTED,
+            description = "Collection of LinkAddresses configured on active network (Restricted: Target process lacks ACCESS_NETWORK_STATE required by ConnectivityManager)."
         ),
         ApiEntry(
             category = ApiCategory.NETWORK_ANDROID,
@@ -647,13 +652,14 @@ object NetworkApiCatalog {
             signature = "LinkProperties.getAddresses()",
             isImplemented = true,
             isRegistered = true,
-            isInvoked = true,
-            isGenerated = true,
-            isReturned = true,
-            isTargetObserved = true,
-            status = HookStatus.IMPLEMENTED_BUT_NOT_RUNTIME_VERIFIED,
-            layer = InterceptionLayer.FRAMEWORK_JAVA,
-            description = "All IP addresses assigned to this link."
+            isInvoked = false,
+            isGenerated = false,
+            isReturned = false,
+            isTargetObserved = false,
+            physicalVerification = "PLATFORM_PERMISSION_RESTRICTED",
+            status = HookStatus.PLATFORM_PERMISSION_RESTRICTED,
+            layer = InterceptionLayer.PLATFORM_RESTRICTED,
+            description = "All IP addresses assigned to this link (Restricted: Target process lacks ACCESS_NETWORK_STATE required by ConnectivityManager)."
         ),
         ApiEntry(
             category = ApiCategory.NETWORK_ANDROID,
@@ -693,9 +699,10 @@ object NetworkApiCatalog {
             isGenerated = false,
             isReturned = false,
             isTargetObserved = false,
+            physicalVerification = "UNSUPPORTED_PHYSICAL_EGRESS",
             status = HookStatus.UNSUPPORTED_AT_CURRENT_LAYER,
             layer = InterceptionLayer.NATIVE_SOCKET,
-            description = "Actual carrier/gateway public egress IP observed by external internet servers."
+            description = "Actual carrier/gateway public egress IP observed by external internet servers (Unsupported at application layer: Low-level TCP/IP egress is routed by OS kernel and cellular/Wi-Fi carrier NAT gateways)."
         )
     )
 }

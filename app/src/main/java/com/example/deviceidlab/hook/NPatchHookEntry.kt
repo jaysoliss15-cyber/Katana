@@ -58,6 +58,12 @@ class NPatchHookEntry : IXposedHookLoadPackage, IXposedHookZygoteInit {
         Log.i(TAG, msg)
         XposedBridge.log(msg)
 
+        startupParam?.let {
+            try {
+                com.example.deviceidlab.runtime.IdentityRuntimeEntry.initZygote(it)
+            } catch (_: Throwable) {}
+        }
+
         try {
             xSharedPreferences = XSharedPreferences("com.example.deviceidlab", PREF_FILE).apply {
                 makeWorldReadable()
@@ -83,6 +89,10 @@ class NPatchHookEntry : IXposedHookLoadPackage, IXposedHookZygoteInit {
         val targetLog = "[NPATCH] Target process detected: pkg='${lpparam.packageName}', process='${lpparam.processName}', pid=$pid"
         Log.i(TAG, targetLog)
         XposedBridge.log(targetLog)
+
+        try {
+            com.example.deviceidlab.runtime.IdentityRuntimeEntry.handleLoadPackage(lpparam)
+        } catch (_: Throwable) {}
 
         Log.i(TAG, "[NPATCH] Hook installation started in process='${lpparam.processName}'")
         XposedBridge.log("[NPATCH] Hook installation started in process='${lpparam.processName}'")
@@ -710,6 +720,87 @@ class NPatchHookEntry : IXposedHookLoadPackage, IXposedHookZygoteInit {
                     override fun afterHookedMethod(param: MethodHookParam) {
                         if (!isInterceptionEnabled()) return
                         Log.d(TAG, "[$TAG] [NPATCH HOOK] NetworkInterface.getInterfaceAddresses() intercepted")
+                    }
+                }
+            )
+        } catch (_: Throwable) {}
+
+        // 3a. NetworkInterface.getNetworkInterfaces()
+        try {
+            XposedHelpers.findAndHookMethod(
+                "java.net.NetworkInterface",
+                lpparam.classLoader,
+                "getNetworkInterfaces",
+                object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        if (!isInterceptionEnabled()) return
+                        try {
+                            val resolver = resolveContentResolver(null)
+                            val profile = queryDynamicProfile(resolver)
+                            val synthAddr = InetAddress.getByName(profile.syntheticIp)
+                            val macBytes = NPatchConfig.macToByteArray(profile.macAddress)
+
+                            @Suppress("UNCHECKED_CAST")
+                            val list = (param.result as? java.util.Enumeration<NetworkInterface>)?.toList()?.toMutableList()
+                                ?: mutableListOf()
+
+                            var hasNonLoopback = false
+                            for (netIf in list) {
+                                try {
+                                    val name = try { netIf.name } catch (_: Throwable) { "" }
+                                    val isLb = try { netIf.isLoopback } catch (_: Throwable) { name == "lo" }
+                                    if (!isLb || name != "lo") {
+                                        hasNonLoopback = true
+                                    }
+                                } catch (_: Throwable) {}
+                            }
+
+                            if (!hasNonLoopback) {
+                                try {
+                                    val netIfClass = NetworkInterface::class.java
+                                    val netIf = try {
+                                        val ctor = netIfClass.getDeclaredConstructor()
+                                        ctor.isAccessible = true
+                                        ctor.newInstance()
+                                    } catch (_: Throwable) {
+                                        val ctor = netIfClass.declaredConstructors.firstOrNull { it.parameterTypes.size == 3 }
+                                        ctor?.isAccessible = true
+                                        ctor?.newInstance("wlan0", 2, arrayOf(synthAddr)) as? NetworkInterface
+                                    }
+                                    if (netIf != null) {
+                                        try { XposedHelpers.setObjectField(netIf, "name", "wlan0") } catch (_: Throwable) {}
+                                        try { XposedHelpers.setObjectField(netIf, "displayName", "wlan0") } catch (_: Throwable) {}
+                                        try { XposedHelpers.setIntField(netIf, "index", 2) } catch (_: Throwable) {}
+                                        try { XposedHelpers.setObjectField(netIf, "hardwareAddr", macBytes) } catch (_: Throwable) {}
+                                        try { XposedHelpers.setObjectField(netIf, "addrs", arrayOf(synthAddr)) } catch (_: Throwable) {}
+                                        try { XposedHelpers.setObjectField(netIf, "addresses", listOf(synthAddr)) } catch (_: Throwable) {}
+                                        try { XposedHelpers.setBooleanField(netIf, "virtual", false) } catch (_: Throwable) {}
+                                        list.add(netIf)
+                                    }
+                                } catch (_: Throwable) {}
+                            }
+
+                            param.result = Collections.enumeration(list)
+                        } catch (_: Throwable) {}
+                    }
+                }
+            )
+        } catch (_: Throwable) {}
+
+        // 3b. NetworkInterface.isLoopback()
+        try {
+            XposedHelpers.findAndHookMethod(
+                "java.net.NetworkInterface",
+                lpparam.classLoader,
+                "isLoopback",
+                object : XC_MethodHook() {
+                    override fun beforeHookedMethod(param: MethodHookParam) {
+                        val netIf = param.thisObject as? NetworkInterface ?: return
+                        val name = try { netIf.name } catch (_: Throwable) { "" }
+                        if (name != "lo") {
+                            param.throwable = null
+                            param.result = false
+                        }
                     }
                 }
             )

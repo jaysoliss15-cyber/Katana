@@ -31,6 +31,18 @@ data class NPatchVerificationAudit(
     val currentStage: String = NPatchAuditManager.TARGET_OBSERVED
 )
 
+data class ApiStageVerification(
+    val apiName: String,
+    val isRegistered: Boolean = false,
+    val isInvoked: Boolean = false,
+    val isGenerated: Boolean = false,
+    val isReturned: Boolean = false,
+    val isTargetObserved: Boolean = false,
+    val expectedValue: String = "",
+    val observedValue: String = "",
+    val result: String = "PENDING"
+)
+
 /**
  * Singleton audit manager tracking runtime NPatch 1.0.7 hook registration,
  * invocation events, and 5-stage verification states.
@@ -46,6 +58,7 @@ object NPatchAuditManager {
     const val TARGET_OBSERVED = "TARGET_OBSERVED"
 
     private val auditEvents = mutableListOf<HookAuditEvent>()
+    private val stageVerifications = mutableMapOf<String, ApiStageVerification>()
 
     @Synchronized
     fun recordHookEvent(
@@ -80,8 +93,38 @@ object NPatchAuditManager {
             auditEvents.removeAt(0)
         }
 
-        Log.i(TAG, "[$TAG] [HOOK AUDIT] api='$apiName' in pkg='$targetPackage' (PID $targetPid) -> returned='$returnedId'")
+        // Track 5-stage lifecycle per API
+        val current = stageVerifications[apiName] ?: ApiStageVerification(apiName = apiName)
+        val updated = when (stage) {
+            HOOK_REGISTERED -> current.copy(isRegistered = true)
+            HOOK_INVOKED -> current.copy(isInvoked = true)
+            VALUE_GENERATED -> current.copy(
+                isGenerated = true,
+                expectedValue = injectedId.ifEmpty { current.expectedValue }
+            )
+            VALUE_RETURNED -> current.copy(
+                isReturned = true,
+                observedValue = returnedId.ifEmpty { current.observedValue }
+            )
+            TARGET_OBSERVED -> current.copy(
+                isTargetObserved = true,
+                observedValue = returnedId.ifEmpty { current.observedValue },
+                result = if (current.expectedValue.isNotEmpty() && returnedId.isNotEmpty() && current.expectedValue != returnedId) "MISMATCH" else "PASS"
+            )
+            else -> current
+        }
+        stageVerifications[apiName] = updated
+
+        Log.i(TAG, "[$TAG] [HOOK AUDIT] api='$apiName' in pkg='$targetPackage' (PID $targetPid) stage='$stage' -> returned='$returnedId'")
     }
+
+    @Synchronized
+    fun getStageVerification(apiName: String): ApiStageVerification {
+        return stageVerifications[apiName] ?: ApiStageVerification(apiName = apiName)
+    }
+
+    @Synchronized
+    fun getAllStageVerifications(): Map<String, ApiStageVerification> = stageVerifications.toMap()
 
     @Synchronized
     fun getAuditEvents(): List<HookAuditEvent> = auditEvents.toList()
@@ -114,5 +157,6 @@ object NPatchAuditManager {
     @Synchronized
     fun clearEvents() {
         auditEvents.clear()
+        stageVerifications.clear()
     }
 }
