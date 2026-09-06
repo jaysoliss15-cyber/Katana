@@ -45,6 +45,37 @@ class TargetDemoActivity : Activity() {
         val resultsContainer = findViewById<LinearLayout>(R.id.layout_test_results) ?: return
         resultsContainer.removeAllViews()
 
+        val providerUri = android.net.Uri.parse("content://com.example.deviceidlab.provider")
+        val activeProfileBundle = try {
+            contentResolver.call(providerUri, "get_current_test_ids", null, null)
+        } catch (_: Throwable) { null }
+
+        val expAndroidId = activeProfileBundle?.getString("android_test_id")
+            ?: activeProfileBundle?.getString("test_id") ?: "NPATCH_ANDROID_001"
+        val expTelephonyId = activeProfileBundle?.getString("telephony_test_id") ?: "NPATCH_TELEPHONY_001"
+        val expIp = activeProfileBundle?.getString("active_synthetic_ip") ?: "203.0.113.42"
+        val expMac = activeProfileBundle?.getString("active_mac_address") ?: "02:00:11:22:33:44"
+        val expSsid = activeProfileBundle?.getString("active_wifi_ssid") ?: "\"LabTest_WiFi\""
+        val expBssid = activeProfileBundle?.getString("active_wifi_bssid") ?: expMac
+        val expLat = if (activeProfileBundle != null && activeProfileBundle.containsKey("active_latitude")) activeProfileBundle.getDouble("active_latitude") else 37.7749
+        val expLng = if (activeProfileBundle != null && activeProfileBundle.containsKey("active_longitude")) activeProfileBundle.getDouble("active_longitude") else -122.4194
+        val expLoc = "%.4f, %.4f".format(expLat, expLng)
+
+        fun reportTargetObserved(apiName: String, value: String) {
+            try {
+                val extras = Bundle().apply {
+                    putString("target_package", packageName)
+                    putString("target_process", applicationInfo.processName ?: packageName)
+                    putInt("target_pid", android.os.Process.myPid())
+                    putString("api_name", apiName)
+                    putString("stage", "TARGET_OBSERVED")
+                    putString("injected_id", value)
+                    putString("returned_id", value)
+                }
+                contentResolver.call(providerUri, "report_interception", null, extras)
+            } catch (_: Throwable) {}
+        }
+
         val tests = mutableListOf<TestResult>()
 
         // 1. Android ID
@@ -53,14 +84,16 @@ class TargetDemoActivity : Activity() {
         } catch (t: Throwable) {
             "Error: ${t.message}"
         }
+        val isAndroidMatch = obsAndroidId == expAndroidId
+        if (isAndroidMatch) reportTargetObserved("Settings.Secure.getString(android_id)", obsAndroidId)
         tests.add(
             TestResult(
                 api = "Settings.Secure.getString(android_id)",
-                expected = "NPATCH_ANDROID_001",
+                expected = expAndroidId,
                 observed = obsAndroidId,
-                hookStatus = if (obsAndroidId.startsWith("NPATCH")) "TARGET_OBSERVED" else "HOOK_REGISTERED",
-                matchStatus = if (obsAndroidId.startsWith("NPATCH")) "MATCH" else "MISMATCH",
-                diagnosis = "Target process queries Settings.Secure for simulated Android ID."
+                hookStatus = if (isAndroidMatch) "TARGET_OBSERVED" else "HOOK_REGISTERED",
+                matchStatus = if (isAndroidMatch) "MATCH" else "MISMATCH",
+                diagnosis = if (isAndroidMatch) "Target process queries Settings.Secure for active simulated Android ID." else "Observed un-intercepted Android ID."
             )
         )
 
@@ -74,14 +107,24 @@ class TargetDemoActivity : Activity() {
         } catch (t: Throwable) {
             "Error: ${t.message}"
         }
+        val isTeleMatch = obsTelephony == expTelephonyId
+        if (isTeleMatch) reportTargetObserved("TelephonyManager.getDeviceId()", obsTelephony)
         tests.add(
             TestResult(
                 api = "TelephonyManager.getDeviceId()",
-                expected = "NPATCH_TELEPHONY_001",
+                expected = expTelephonyId,
                 observed = obsTelephony,
-                hookStatus = if (obsTelephony.startsWith("NPATCH")) "TARGET_OBSERVED" else "HOOK_REGISTERED",
-                matchStatus = if (obsTelephony.startsWith("NPATCH")) "MATCH" else "RESTRICTED",
-                diagnosis = "Target queries TelephonyManager for simulated Device ID."
+                hookStatus = when {
+                    isTeleMatch -> "TARGET_OBSERVED"
+                    obsTelephony.startsWith("Restricted") -> "RESTRICTED"
+                    else -> "HOOK_REGISTERED"
+                },
+                matchStatus = when {
+                    isTeleMatch -> "MATCH"
+                    obsTelephony.startsWith("Restricted") -> "RESTRICTED"
+                    else -> "MISMATCH"
+                },
+                diagnosis = if (isTeleMatch) "Target queries TelephonyManager for active simulated Device ID." else "Telephony ID not matched or restricted."
             )
         )
 
@@ -95,15 +138,24 @@ class TargetDemoActivity : Activity() {
         } catch (t: Throwable) {
             "Error: ${t.message}"
         }
-        val isLocMatch = obsLoc.contains("37.77") || obsLoc.startsWith("35.") || obsLoc.startsWith("51.") || obsLoc.startsWith("40.")
+        val isLocMatch = obsLoc == expLoc
+        if (isLocMatch) reportTargetObserved("LocationManager.getLastKnownLocation", obsLoc)
         tests.add(
             TestResult(
                 api = "LocationManager.getLastKnownLocation(gps)",
-                expected = "Worldwide Coordinates",
+                expected = expLoc,
                 observed = obsLoc,
-                hookStatus = if (isLocMatch) "TARGET_OBSERVED" else "HOOK_REGISTERED",
-                matchStatus = if (isLocMatch) "MATCH" else "MISMATCH",
-                diagnosis = "Worldwide location coordinates intercepted."
+                hookStatus = when {
+                    isLocMatch -> "TARGET_OBSERVED"
+                    obsLoc.startsWith("Location Permission") -> "RESTRICTED"
+                    else -> "HOOK_REGISTERED"
+                },
+                matchStatus = when {
+                    isLocMatch -> "MATCH"
+                    obsLoc.startsWith("Location Permission") -> "RESTRICTED"
+                    else -> "MISMATCH"
+                },
+                diagnosis = if (isLocMatch) "Worldwide location coordinates intercepted." else "Location not matched or permission restricted."
             )
         )
 
@@ -112,14 +164,16 @@ class TargetDemoActivity : Activity() {
             val loc = lm?.getLastKnownLocation(LocationManager.GPS_PROVIDER)
             loc?.latitude
         } catch (_: Throwable) { null }
+        val isLatMatch = obsLat != null && "%.4f".format(obsLat) == "%.4f".format(expLat)
+        if (isLatMatch) reportTargetObserved("Location.getLatitude()", obsLat.toString())
         tests.add(
             TestResult(
                 api = "Location.getLatitude()",
-                expected = "Active Profile Latitude",
-                observed = obsLat?.toString() ?: "null",
-                hookStatus = if (obsLat != null) "TARGET_OBSERVED" else "HOOK_REGISTERED",
-                matchStatus = if (obsLat != null) "MATCH" else "MISMATCH",
-                diagnosis = "Location.getLatitude() intercepted via framework hook."
+                expected = "%.4f".format(expLat),
+                observed = obsLat?.let { "%.4f".format(it) } ?: "null",
+                hookStatus = if (isLatMatch) "TARGET_OBSERVED" else "HOOK_REGISTERED",
+                matchStatus = if (isLatMatch) "MATCH" else "MISMATCH",
+                diagnosis = if (isLatMatch) "Location.getLatitude() intercepted via framework hook." else "Latitude not intercepted."
             )
         )
 
@@ -139,15 +193,16 @@ class TargetDemoActivity : Activity() {
         } catch (t: Throwable) {
             "Error: ${t.message}"
         }
-        val isMacMatch = obsMac.startsWith("02:00:11:22")
+        val isMacMatch = obsMac.equals(expMac, ignoreCase = true)
+        if (isMacMatch) reportTargetObserved("NetworkInterface.getHardwareAddress()", obsMac)
         tests.add(
             TestResult(
                 api = "NetworkInterface.getHardwareAddress()",
-                expected = "02:00:11:22:33:44",
+                expected = expMac,
                 observed = obsMac,
                 hookStatus = if (isMacMatch) "TARGET_OBSERVED" else "HOOK_REGISTERED",
                 matchStatus = if (isMacMatch) "MATCH" else "MISMATCH",
-                diagnosis = "Hardware MAC substitution for privacy and randomization testing."
+                diagnosis = if (isMacMatch) "Hardware MAC substitution for privacy and randomization testing." else "MAC address not intercepted."
             )
         )
 
@@ -171,15 +226,16 @@ class TargetDemoActivity : Activity() {
         } catch (t: Throwable) {
             "Error: ${t.message}"
         }
-        val isIpMatch = obsIp.startsWith("203.0.113.")
+        val isIpMatch = obsIp == expIp
+        if (isIpMatch) reportTargetObserved("NetworkInterface.getInetAddresses()", obsIp)
         tests.add(
             TestResult(
                 api = "NetworkInterface.getInetAddresses()",
-                expected = "203.0.113.42",
+                expected = expIp,
                 observed = obsIp,
                 hookStatus = if (isIpMatch) "TARGET_OBSERVED" else "HOOK_REGISTERED",
                 matchStatus = if (isIpMatch) "MATCH" else "MISMATCH",
-                diagnosis = "RFC 5737 TEST-NET-3 synthetic IP range (203.0.113.0/24)."
+                diagnosis = if (isIpMatch) "Synthetic IP range ($expIp) active." else "IP address not intercepted."
             )
         )
 
@@ -189,15 +245,16 @@ class TargetDemoActivity : Activity() {
             @Suppress("DEPRECATION")
             wm?.connectionInfo?.macAddress ?: "02:00:00:00:00:00"
         } catch (t: Throwable) { "Error: ${t.message}" }
-        val isWifiMacMatch = obsWifiMac.startsWith("02:00:11:22")
+        val isWifiMacMatch = obsWifiMac.equals(expMac, ignoreCase = true)
+        if (isWifiMacMatch) reportTargetObserved("WifiInfo.getMacAddress()", obsWifiMac)
         tests.add(
             TestResult(
                 api = "WifiInfo.getMacAddress()",
-                expected = "02:00:11:22:33:44",
+                expected = expMac,
                 observed = obsWifiMac,
                 hookStatus = if (isWifiMacMatch) "TARGET_OBSERVED" else "HOOK_REGISTERED",
                 matchStatus = if (isWifiMacMatch) "MATCH" else "MISMATCH",
-                diagnosis = "WifiInfo MAC address intercepted."
+                diagnosis = if (isWifiMacMatch) "WifiInfo MAC address intercepted." else "WifiInfo MAC not intercepted."
             )
         )
 
@@ -209,15 +266,16 @@ class TargetDemoActivity : Activity() {
                 "${ipInt and 0xFF}.${(ipInt shr 8) and 0xFF}.${(ipInt shr 16) and 0xFF}.${(ipInt shr 24) and 0xFF}"
             } else "0.0.0.0"
         } catch (t: Throwable) { "Error: ${t.message}" }
-        val isWifiIpMatch = obsWifiIp.startsWith("203.0.113.")
+        val isWifiIpMatch = obsWifiIp == expIp
+        if (isWifiIpMatch) reportTargetObserved("WifiInfo.getIpAddress()", obsWifiIp)
         tests.add(
             TestResult(
                 api = "WifiInfo.getIpAddress()",
-                expected = "203.0.113.42",
+                expected = expIp,
                 observed = obsWifiIp,
                 hookStatus = if (isWifiIpMatch) "TARGET_OBSERVED" else "HOOK_REGISTERED",
                 matchStatus = if (isWifiIpMatch) "MATCH" else "MISMATCH",
-                diagnosis = "WifiInfo IPv4 address unpacked."
+                diagnosis = if (isWifiIpMatch) "WifiInfo IPv4 address unpacked." else "WifiInfo IP not intercepted."
             )
         )
 
@@ -226,14 +284,16 @@ class TargetDemoActivity : Activity() {
             @Suppress("DEPRECATION")
             wm?.connectionInfo?.ssid ?: "<unknown ssid>"
         } catch (t: Throwable) { "Error: ${t.message}" }
+        val isSsidMatch = obsSsid == expSsid || obsSsid == expSsid.trim('"') || obsSsid == "\"$expSsid\""
+        if (isSsidMatch) reportTargetObserved("WifiInfo.getSSID()", obsSsid)
         tests.add(
             TestResult(
                 api = "WifiInfo.getSSID()",
-                expected = "\"LabTest_WiFi\"",
+                expected = expSsid,
                 observed = obsSsid,
-                hookStatus = if (obsSsid.contains("LabTest")) "TARGET_OBSERVED" else "HOOK_REGISTERED",
-                matchStatus = if (obsSsid.contains("LabTest")) "MATCH" else "MISMATCH",
-                diagnosis = "Connected WiFi SSID substituted."
+                hookStatus = if (isSsidMatch) "TARGET_OBSERVED" else "HOOK_REGISTERED",
+                matchStatus = if (isSsidMatch) "MATCH" else "MISMATCH",
+                diagnosis = if (isSsidMatch) "Connected WiFi SSID substituted." else "SSID not intercepted."
             )
         )
 
@@ -241,14 +301,16 @@ class TargetDemoActivity : Activity() {
             @Suppress("DEPRECATION")
             wm?.connectionInfo?.bssid ?: "02:00:00:00:00:00"
         } catch (t: Throwable) { "Error: ${t.message}" }
+        val isBssidMatch = obsBssid.equals(expBssid, ignoreCase = true)
+        if (isBssidMatch) reportTargetObserved("WifiInfo.getBSSID()", obsBssid)
         tests.add(
             TestResult(
                 api = "WifiInfo.getBSSID()",
-                expected = "02:00:11:22:33:44",
+                expected = expBssid,
                 observed = obsBssid,
-                hookStatus = if (obsBssid.startsWith("02:00:11:22")) "TARGET_OBSERVED" else "HOOK_REGISTERED",
-                matchStatus = if (obsBssid.startsWith("02:00:11:22")) "MATCH" else "MISMATCH",
-                diagnosis = "Connected WiFi BSSID substituted."
+                hookStatus = if (isBssidMatch) "TARGET_OBSERVED" else "HOOK_REGISTERED",
+                matchStatus = if (isBssidMatch) "MATCH" else "MISMATCH",
+                diagnosis = if (isBssidMatch) "Connected WiFi BSSID substituted." else "BSSID not intercepted."
             )
         )
 
@@ -259,14 +321,16 @@ class TargetDemoActivity : Activity() {
             val lp = cm?.getLinkProperties(net)
             lp?.linkAddresses?.firstOrNull()?.address?.hostAddress ?: "None"
         } catch (t: Throwable) { "Error: ${t.message}" }
+        val isLinkPropMatch = obsLinkProp == expIp
+        if (isLinkPropMatch) reportTargetObserved("LinkProperties.getAddresses()", obsLinkProp)
         tests.add(
             TestResult(
                 api = "LinkProperties.getAddresses()",
-                expected = "203.0.113.42",
+                expected = expIp,
                 observed = obsLinkProp,
-                hookStatus = if (obsLinkProp.startsWith("203.0.113.")) "TARGET_OBSERVED" else "HOOK_REGISTERED",
-                matchStatus = if (obsLinkProp.startsWith("203.0.113.")) "MATCH" else "MISMATCH",
-                diagnosis = "LinkProperties interface address intercepted."
+                hookStatus = if (isLinkPropMatch) "TARGET_OBSERVED" else "HOOK_REGISTERED",
+                matchStatus = if (isLinkPropMatch) "MATCH" else "MISMATCH",
+                diagnosis = if (isLinkPropMatch) "LinkProperties interface address intercepted." else "LinkProperties not intercepted."
             )
         )
 

@@ -221,10 +221,9 @@ class DeviceIdentityManager(private val context: Context) {
             // Synchronize active profile with ProfileStore and DeviceIdProvider
             try {
                 com.example.deviceidlab.runtime.ProfileStore.setActiveProfile(activatedProfile, now)
-                com.example.deviceidlab.provider.DeviceIdProvider.updateTestIds(
+                com.example.deviceidlab.provider.DeviceIdProvider.synchronizeProfile(
                     context,
-                    activatedProfile.androidId,
-                    activatedProfile.imei
+                    activatedProfile
                 )
             } catch (_: Throwable) {}
 

@@ -58,6 +58,41 @@ object IdentityInterceptionAdapter {
                         )
                     }
                 }
+
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    val settingName = param.args[1] as? String ?: return
+                    if (settingName.equals("android_id", ignoreCase = true)) {
+                        val resolver = param.args[0] as? ContentResolver
+                        val profile = HostBridge.resolveActiveProfile(resolver)
+                        param.throwable = null
+                        param.result = profile.androidId
+                    }
+                }
+            }
+        }
+
+        // Settings.Secure.getStringForUser(ContentResolver, String, int)
+        hookAcrossLoaders(loaders, "android.provider.Settings\$Secure", "getStringForUser", ContentResolver::class.java, String::class.java, Int::class.javaPrimitiveType ?: Int::class.java) {
+            object : XC_MethodHook() {
+                override fun beforeHookedMethod(param: MethodHookParam) {
+                    val settingName = param.args[1] as? String ?: return
+                    if (settingName.equals("android_id", ignoreCase = true)) {
+                        val resolver = param.args[0] as? ContentResolver
+                        val profile = HostBridge.resolveActiveProfile(resolver)
+                        param.throwable = null
+                        param.result = profile.androidId
+                    }
+                }
+
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    val settingName = param.args[1] as? String ?: return
+                    if (settingName.equals("android_id", ignoreCase = true)) {
+                        val resolver = param.args[0] as? ContentResolver
+                        val profile = HostBridge.resolveActiveProfile(resolver)
+                        param.throwable = null
+                        param.result = profile.androidId
+                    }
+                }
             }
         }
         HostBridge.reportInterceptionStage(
@@ -101,6 +136,12 @@ object IdentityInterceptionAdapter {
                             injectedVal = telephonyVal, returnedVal = telephonyVal
                         )
                     }
+
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        val profile = HostBridge.resolveActiveProfile()
+                        param.throwable = null
+                        param.result = profile.imei
+                    }
                 }
             }
             HostBridge.reportInterceptionStage(
@@ -133,6 +174,12 @@ object IdentityInterceptionAdapter {
                             apiName = "TelephonyManager.$methodName(int)", stage = NPatchAuditManager.VALUE_RETURNED,
                             injectedVal = telephonyVal, returnedVal = telephonyVal
                         )
+                    }
+
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        val profile = HostBridge.resolveActiveProfile()
+                        param.throwable = null
+                        param.result = profile.imei
                     }
                 }
             }

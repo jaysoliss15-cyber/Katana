@@ -245,29 +245,21 @@ class NPatchHookEntry : IXposedHookLoadPackage, IXposedHookZygoteInit {
     )
 
     private fun queryDynamicProfile(resolver: ContentResolver?): DynamicProfile {
-        if (resolver == null) return DynamicProfile()
         return try {
-            val bundle = resolver.call(
-                PROVIDER_URI,
-                DeviceIdProvider.METHOD_GET_CURRENT_TEST_IDS,
-                null,
-                null
-            ) ?: return DynamicProfile()
-
+            val p = com.example.deviceidlab.runtime.HostBridge.resolveActiveProfile(resolver)
             DynamicProfile(
-                androidId = bundle.getString(DeviceIdProvider.KEY_ANDROID_TEST_ID)
-                    ?: bundle.getString(DeviceIdProvider.KEY_TEST_ID) ?: "NPATCH_ANDROID_001",
-                telephonyId = bundle.getString(DeviceIdProvider.KEY_TELEPHONY_TEST_ID) ?: "NPATCH_TELEPHONY_001",
-                syntheticIp = bundle.getString(NPatchConfig.KEY_ACTIVE_SYNTHETIC_IP) ?: NPatchConfig.DEFAULT_SYNTHETIC_IP,
-                macAddress = bundle.getString(NPatchConfig.KEY_ACTIVE_MAC_ADDRESS) ?: NPatchConfig.DEFAULT_MAC,
-                wifiSsid = bundle.getString(NPatchConfig.KEY_ACTIVE_WIFI_SSID) ?: NPatchConfig.DEFAULT_SSID,
-                wifiBssid = bundle.getString(NPatchConfig.KEY_ACTIVE_WIFI_BSSID) ?: NPatchConfig.DEFAULT_BSSID,
-                latitude = if (bundle.containsKey(NPatchConfig.KEY_ACTIVE_LATITUDE)) bundle.getDouble(NPatchConfig.KEY_ACTIVE_LATITUDE) else 37.7749,
-                longitude = if (bundle.containsKey(NPatchConfig.KEY_ACTIVE_LONGITUDE)) bundle.getDouble(NPatchConfig.KEY_ACTIVE_LONGITUDE) else -122.4194,
-                city = bundle.getString(NPatchConfig.KEY_ACTIVE_CITY) ?: "San Francisco",
-                country = bundle.getString(NPatchConfig.KEY_ACTIVE_COUNTRY) ?: "US",
-                timezone = bundle.getString(NPatchConfig.KEY_ACTIVE_TIMEZONE) ?: "America/Los_Angeles",
-                lifecycle = bundle.getString(NPatchConfig.KEY_PROFILE_LIFECYCLE) ?: NPatchConfig.STATE_ACTIVE
+                androidId = p.androidId,
+                telephonyId = p.imei,
+                syntheticIp = p.testIpv4,
+                macAddress = p.macAddress,
+                wifiSsid = p.wifiSsid,
+                wifiBssid = p.bssid,
+                latitude = p.latitude,
+                longitude = p.longitude,
+                city = p.city,
+                country = p.country,
+                timezone = p.timezone,
+                lifecycle = NPatchConfig.STATE_ACTIVE
             )
         } catch (t: Throwable) {
             Log.d(TAG, "[$TAG] [NPATCH] queryDynamicProfile fallback: ${t.message}")
@@ -928,6 +920,9 @@ class NPatchHookEntry : IXposedHookLoadPackage, IXposedHookZygoteInit {
         val inMemory = InterceptionBridge.activeSimulatedAndroidId.value
         if (!inMemory.isNullOrEmpty()) return inMemory
 
+        val fromBridge = com.example.deviceidlab.runtime.HostBridge.resolveActiveProfile().androidId
+        if (fromBridge.isNotEmpty()) return fromBridge
+
         return try {
             val prefs = getOrInitXPrefs()
             prefs?.reload()
@@ -941,6 +936,9 @@ class NPatchHookEntry : IXposedHookLoadPackage, IXposedHookZygoteInit {
     private fun resolveActiveTelephonyId(): String? {
         val inMemory = InterceptionBridge.activeSimulatedTelephonyId.value
         if (!inMemory.isNullOrEmpty()) return inMemory
+
+        val fromBridge = com.example.deviceidlab.runtime.HostBridge.resolveActiveProfile().imei
+        if (fromBridge.isNotEmpty()) return fromBridge
 
         return try {
             val prefs = getOrInitXPrefs()

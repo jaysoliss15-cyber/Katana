@@ -63,6 +63,20 @@ object LocationInterceptionAdapter {
                         returnedVal = "${profile.latitude}, ${profile.longitude}"
                     )
                 }
+
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    val profile = HostBridge.resolveActiveProfile()
+                    val provider = param.args.getOrNull(0) as? String ?: "gps"
+                    val loc = Location(provider).apply {
+                        latitude = profile.latitude
+                        longitude = profile.longitude
+                        altitude = 15.0
+                        accuracy = 5.0f
+                        time = System.currentTimeMillis()
+                    }
+                    param.throwable = null
+                    param.result = loc
+                }
             }
         }
         HostBridge.reportInterceptionStage(
@@ -95,6 +109,12 @@ object LocationInterceptionAdapter {
                         injectedVal = "${profile.latitude}", returnedVal = "${profile.latitude}"
                     )
                 }
+
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    val profile = HostBridge.resolveActiveProfile()
+                    param.throwable = null
+                    param.result = profile.latitude
+                }
             }
         }
         HostBridge.reportInterceptionStage(
@@ -126,6 +146,12 @@ object LocationInterceptionAdapter {
                         apiName = "Location.getLongitude()", stage = NPatchAuditManager.VALUE_RETURNED,
                         injectedVal = "${profile.longitude}", returnedVal = "${profile.longitude}"
                     )
+                }
+
+                override fun afterHookedMethod(param: MethodHookParam) {
+                    val profile = HostBridge.resolveActiveProfile()
+                    param.throwable = null
+                    param.result = profile.longitude
                 }
             }
         }

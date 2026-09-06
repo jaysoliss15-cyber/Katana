@@ -249,6 +249,47 @@ class DeviceIdProvider : ContentProvider() {
         fun updateTelephonyTestId(context: Context?, newId: String) {
             updateTestIds(context, activeAndroidTestId, newId)
         }
+
+        fun synchronizeProfile(context: Context?, profile: com.example.deviceidlab.runtime.DeviceProfile) {
+            activeAndroidTestId = profile.androidId
+            activeTelephonyTestId = profile.imei
+            _currentAndroidTestIdFlow.value = profile.androidId
+            _currentTelephonyTestIdFlow.value = profile.imei
+            if (profile.macAddress.isNotBlank()) activeMacAddress = profile.macAddress
+            if (profile.testIpv4.isNotBlank()) activeSyntheticIp = profile.testIpv4
+            if (profile.wifiSsid.isNotBlank()) activeWifiSsid = profile.wifiSsid
+            if (profile.bssid.isNotBlank()) activeWifiBssid = profile.bssid
+            if (profile.latitude != 0.0 || profile.longitude != 0.0) {
+                activeLatitude = profile.latitude
+                activeLongitude = profile.longitude
+                activeCity = profile.city
+                activeCountry = profile.country
+                activeTimezone = profile.timezone
+            }
+            profileLifecycleState = NPatchConfig.STATE_ACTIVE
+            com.example.deviceidlab.runtime.ProfileStore.setActiveProfile(profile)
+            context?.let { ctx ->
+                try {
+                    val prefs = ctx.getSharedPreferences(NPatchConfig.PREF_FILE, Context.MODE_PRIVATE)
+                    prefs.edit().apply {
+                        putString(NPatchConfig.KEY_ACTIVE_ANDROID_ID, profile.androidId)
+                        putString(NPatchConfig.KEY_ACTIVE_TELEPHONY_ID, profile.imei)
+                        putString(NPatchConfig.KEY_ACTIVE_SYNTHETIC_IP, activeSyntheticIp)
+                        putString(NPatchConfig.KEY_ACTIVE_MAC_ADDRESS, activeMacAddress)
+                        putString(NPatchConfig.KEY_ACTIVE_WIFI_SSID, activeWifiSsid)
+                        putString(NPatchConfig.KEY_ACTIVE_WIFI_BSSID, activeWifiBssid)
+                        putFloat(NPatchConfig.KEY_ACTIVE_LATITUDE, activeLatitude.toFloat())
+                        putFloat(NPatchConfig.KEY_ACTIVE_LONGITUDE, activeLongitude.toFloat())
+                        putString(NPatchConfig.KEY_ACTIVE_CITY, activeCity)
+                        putString(NPatchConfig.KEY_ACTIVE_COUNTRY, activeCountry)
+                        putString(NPatchConfig.KEY_ACTIVE_TIMEZONE, activeTimezone)
+                        putString(NPatchConfig.KEY_PROFILE_LIFECYCLE, NPatchConfig.STATE_ACTIVE)
+                        putBoolean(NPatchConfig.KEY_INTERCEPTION_ENABLED, isInterceptionEnabled)
+                        apply()
+                    }
+                } catch (_: Throwable) {}
+            }
+        }
     }
 
     override fun onCreate(): Boolean {
@@ -276,7 +317,7 @@ class DeviceIdProvider : ContentProvider() {
         val callerPkg = try { callingPackage } catch (_: Throwable) { "unknown" }
 
         when (method) {
-            METHOD_GET_CURRENT_TEST_IDS, METHOD_GET_CURRENT_TEST_ID, "get_current_test_id" -> {
+            METHOD_GET_CURRENT_TEST_IDS, METHOD_GET_CURRENT_TEST_ID, "get_current_test_id", "get_current_test_ids" -> {
                 Log.d(TAG, "[$TAG] [NPATCH] GET_CURRENT_TEST_IDS requested by caller '$callerPkg' -> Android='$activeAndroidTestId', Telephony='$activeTelephonyTestId', IP='$activeSyntheticIp'")
                 result.putString(KEY_TEST_ID, activeAndroidTestId)
                 result.putString(KEY_ANDROID_TEST_ID, activeAndroidTestId)
