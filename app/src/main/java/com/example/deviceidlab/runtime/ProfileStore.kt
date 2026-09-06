@@ -15,8 +15,7 @@ import com.example.deviceidlab.model.ProfileState
 object ProfileStore {
     const val CURRENT_SCHEMA_VERSION = 2
 
-    @Volatile
-    private var activeProfile: DeviceProfile = DeviceProfile(
+    val DEFAULT_PROFILE: DeviceProfile = DeviceProfile(
         id = "default_npatch_profile",
         name = "Default Active Identity Profile",
         androidId = "NPATCH_ANDROID_001",
@@ -45,6 +44,9 @@ object ProfileStore {
     )
 
     @Volatile
+    private var activeProfile: DeviceProfile = DEFAULT_PROFILE
+
+    @Volatile
     private var profileVersion: Long = 1L
 
     @Synchronized
@@ -57,6 +59,12 @@ object ProfileStore {
     fun setActiveProfile(profile: DeviceProfile, version: Long = System.currentTimeMillis()) {
         activeProfile = profile
         profileVersion = version
+    }
+
+    @Synchronized
+    fun resetToDefault() {
+        activeProfile = DEFAULT_PROFILE
+        profileVersion = 1L
     }
 
     /**

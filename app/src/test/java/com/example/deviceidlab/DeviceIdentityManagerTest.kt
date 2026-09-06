@@ -12,6 +12,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
+import org.junit.After
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -26,6 +27,12 @@ class DeviceIdentityManagerTest {
     fun setUp() {
         mockPrefs = MockSharedPreferences()
         mockContext = MockContext(mockPrefs)
+        com.example.deviceidlab.runtime.ProfileStore.resetToDefault()
+    }
+
+    @After
+    fun tearDown() {
+        com.example.deviceidlab.runtime.ProfileStore.resetToDefault()
     }
 
     @Test

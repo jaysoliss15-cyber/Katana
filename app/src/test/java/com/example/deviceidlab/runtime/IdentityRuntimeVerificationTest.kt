@@ -5,6 +5,7 @@ import com.example.deviceidlab.hook.NPatchConfig
 import com.example.deviceidlab.hook.NetworkApiCatalog
 import com.example.deviceidlab.model.DeviceProfile
 import com.example.deviceidlab.model.ProfileState
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -22,6 +23,13 @@ class IdentityRuntimeVerificationTest {
     @Before
     fun setUp() {
         NPatchAuditManager.clearEvents()
+        ProfileStore.resetToDefault()
+    }
+
+    @After
+    fun tearDown() {
+        NPatchAuditManager.clearEvents()
+        ProfileStore.resetToDefault()
     }
 
     @Test
