@@ -42,6 +42,15 @@ object ProfileJsonSerializer {
         sb.append("\"phoneNumber\":").append(escape(p.phoneNumber)).append(",")
         sb.append("\"batteryHealth\":").append(p.batteryHealth).append(",")
         sb.append("\"testIpv4\":").append(escape(p.testIpv4)).append(",")
+        sb.append("\"wifiSsid\":").append(escape(p.wifiSsid)).append(",")
+        sb.append("\"bssid\":").append(escape(p.bssid)).append(",")
+        sb.append("\"latitude\":").append(p.latitude).append(",")
+        sb.append("\"longitude\":").append(p.longitude).append(",")
+        sb.append("\"city\":").append(escape(p.city)).append(",")
+        sb.append("\"country\":").append(escape(p.country)).append(",")
+        sb.append("\"timezone\":").append(escape(p.timezone)).append(",")
+        sb.append("\"carrierName\":").append(escape(p.carrierName)).append(",")
+        sb.append("\"simOperator\":").append(escape(p.simOperator)).append(",")
         sb.append("\"createdAt\":").append(p.createdAt).append(",")
         sb.append("\"state\":").append(escape(p.state.name)).append(",")
         sb.append("\"consumedAt\":").append(p.consumedAt ?: "null")
@@ -62,6 +71,15 @@ object ProfileJsonSerializer {
         val phoneNumber = map["phoneNumber"]?.takeIf { it.isNotEmpty() } ?: "+1 (555) 234-5678"
         val batteryHealth = map["batteryHealth"]?.toIntOrNull() ?: 95
         val testIpv4 = map["testIpv4"]?.takeIf { it.isNotEmpty() } ?: "192.0.2.101"
+        val wifiSsid = map["wifiSsid"]?.takeIf { it.isNotEmpty() } ?: "\"LabTest_WiFi\""
+        val bssid = map["bssid"]?.takeIf { it.isNotEmpty() } ?: "02:00:11:22:33:44"
+        val latitude = map["latitude"]?.toDoubleOrNull() ?: 37.7749
+        val longitude = map["longitude"]?.toDoubleOrNull() ?: -122.4194
+        val city = map["city"]?.takeIf { it.isNotEmpty() } ?: "San Francisco"
+        val country = map["country"]?.takeIf { it.isNotEmpty() } ?: "US"
+        val timezone = map["timezone"]?.takeIf { it.isNotEmpty() } ?: "America/Los_Angeles"
+        val carrierName = map["carrierName"]?.takeIf { it.isNotEmpty() } ?: "Android Carrier"
+        val simOperator = map["simOperator"]?.takeIf { it.isNotEmpty() } ?: "310260"
 
         return DeviceProfile(
             id = map["id"] ?: "",
@@ -79,6 +97,15 @@ object ProfileJsonSerializer {
             phoneNumber = phoneNumber,
             batteryHealth = batteryHealth,
             testIpv4 = testIpv4,
+            wifiSsid = wifiSsid,
+            bssid = bssid,
+            latitude = latitude,
+            longitude = longitude,
+            city = city,
+            country = country,
+            timezone = timezone,
+            carrierName = carrierName,
+            simOperator = simOperator,
             createdAt = createdAt,
             state = state,
             consumedAt = consumedAt

@@ -23,6 +23,14 @@ object ProfileStore {
         imei = "NPATCH_TELEPHONY_001",
         serialNumber = "NPATCH_SERIAL_001",
         macAddress = NPatchConfig.DEFAULT_MAC,
+        buildModel = "Pixel 7",
+        buildManufacturer = "Google",
+        buildBrand = "google",
+        buildProduct = "panther",
+        buildDevice = "panther",
+        buildFingerprint = "google/panther/panther:13/TQ3A.230901.001/10750709:user/release-keys",
+        phoneNumber = "+1 (555) 234-5678",
+        batteryHealth = 95,
         testIpv4 = NPatchConfig.DEFAULT_SYNTHETIC_IP,
         wifiSsid = NPatchConfig.DEFAULT_SSID,
         bssid = NPatchConfig.DEFAULT_BSSID,
@@ -65,6 +73,14 @@ object ProfileStore {
             putString("imei", profile.imei)
             putString("serial", profile.serialNumber)
             putString("mac_address", profile.macAddress)
+            putString("build_model", profile.buildModel)
+            putString("build_manufacturer", profile.buildManufacturer)
+            putString("build_brand", profile.buildBrand)
+            putString("build_product", profile.buildProduct)
+            putString("build_device", profile.buildDevice)
+            putString("build_fingerprint", profile.buildFingerprint)
+            putString("phone_number", profile.phoneNumber)
+            putInt("battery_health", profile.batteryHealth)
             putString("synthetic_ip", profile.testIpv4)
             putString("wifi_ssid", profile.wifiSsid)
             putString("wifi_bssid", profile.bssid)
@@ -96,6 +112,30 @@ object ProfileStore {
         val mac = bundle.getString("mac_address")
             ?: bundle.getString(NPatchConfig.KEY_ACTIVE_MAC_ADDRESS)
             ?: current.macAddress
+        val buildModel = bundle.getString("build_model")
+            ?: bundle.getString("buildModel")
+            ?: current.buildModel
+        val buildManufacturer = bundle.getString("build_manufacturer")
+            ?: bundle.getString("buildManufacturer")
+            ?: current.buildManufacturer
+        val buildBrand = bundle.getString("build_brand")
+            ?: bundle.getString("buildBrand")
+            ?: current.buildBrand
+        val buildProduct = bundle.getString("build_product")
+            ?: bundle.getString("buildProduct")
+            ?: current.buildProduct
+        val buildDevice = bundle.getString("build_device")
+            ?: bundle.getString("buildDevice")
+            ?: current.buildDevice
+        val buildFingerprint = bundle.getString("build_fingerprint")
+            ?: bundle.getString("buildFingerprint")
+            ?: current.buildFingerprint
+        val phoneNumber = bundle.getString("phone_number")
+            ?: bundle.getString("phoneNumber")
+            ?: current.phoneNumber
+        val batteryHealth = if (bundle.containsKey("battery_health")) bundle.getInt("battery_health")
+        else if (bundle.containsKey("batteryHealth")) bundle.getInt("batteryHealth")
+        else current.batteryHealth
         val ip = bundle.getString("synthetic_ip")
             ?: bundle.getString(NPatchConfig.KEY_ACTIVE_SYNTHETIC_IP)
             ?: current.testIpv4
@@ -128,6 +168,14 @@ object ProfileStore {
             imei = imei,
             serialNumber = bundle.getString("serial") ?: current.serialNumber,
             macAddress = mac,
+            buildModel = buildModel,
+            buildManufacturer = buildManufacturer,
+            buildBrand = buildBrand,
+            buildProduct = buildProduct,
+            buildDevice = buildDevice,
+            buildFingerprint = buildFingerprint,
+            phoneNumber = phoneNumber,
+            batteryHealth = batteryHealth,
             testIpv4 = ip,
             wifiSsid = ssid,
             bssid = bssid,

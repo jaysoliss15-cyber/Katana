@@ -1,7 +1,6 @@
 package com.example.deviceidlab.runtime.adapters
 
 import android.content.ContentResolver
-import android.net.LinkAddress
 import android.net.LinkProperties
 import android.net.wifi.WifiInfo
 import android.os.Process
@@ -540,9 +539,11 @@ object NetworkInterceptionAdapter {
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     val profile = HostBridge.resolveActiveProfile()
                     val synthAddr = InetAddress.getByName(profile.testIpv4)
-                    val linkAddr = LinkAddress(synthAddr, 24)
-                    param.throwable = null
-                    param.result = listOf(linkAddr)
+                    val linkAddr = createSyntheticLinkAddress(synthAddr, 24)
+                    if (linkAddr != null) {
+                        param.throwable = null
+                        param.result = listOf(linkAddr)
+                    }
                     HostBridge.reportInterceptionStage(
                         targetPkg = packageName, targetProc = processName, targetPid = pid,
                         apiName = "LinkProperties.getLinkAddresses()", stage = NPatchAuditManager.TARGET_OBSERVED,
@@ -552,6 +553,37 @@ object NetworkInterceptionAdapter {
             })
             HostBridge.reportInterceptionStage(packageName, processName, pid, "LinkProperties.getLinkAddresses()", NPatchAuditManager.HOOK_REGISTERED)
         } catch (_: Throwable) {}
+    }
+
+    private fun createSyntheticLinkAddress(address: InetAddress, prefixLength: Int = 24): Any? {
+        return try {
+            val linkAddressClass = Class.forName("android.net.LinkAddress")
+            for (ctor in linkAddressClass.declaredConstructors) {
+                try {
+                    ctor.isAccessible = true
+                    val params = ctor.parameterTypes
+                    if (params.size == 2 &&
+                        params[0].isAssignableFrom(InetAddress::class.java) &&
+                        (params[1] == Int::class.javaPrimitiveType || params[1] == java.lang.Integer::class.java)
+                    ) {
+                        return ctor.newInstance(address, prefixLength)
+                    }
+                } catch (_: Throwable) {}
+            }
+            for (ctor in linkAddressClass.declaredConstructors) {
+                try {
+                    ctor.isAccessible = true
+                    val params = ctor.parameterTypes
+                    if (params.size == 1 && params[0] == String::class.java) {
+                        val host = address.hostAddress ?: "203.0.113.42"
+                        return ctor.newInstance("$host/$prefixLength")
+                    }
+                } catch (_: Throwable) {}
+            }
+            null
+        } catch (_: Throwable) {
+            null
+        }
     }
 
     private fun hookAcrossLoaders(
