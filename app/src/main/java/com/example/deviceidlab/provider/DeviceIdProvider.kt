@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.util.Log
 import com.example.deviceidlab.hook.NPatchAuditManager
 import com.example.deviceidlab.hook.NPatchConfig
+import com.example.deviceidlab.model.DeviceProfile
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -250,7 +251,7 @@ class DeviceIdProvider : ContentProvider() {
             updateTestIds(context, activeAndroidTestId, newId)
         }
 
-        fun synchronizeProfile(context: Context?, profile: com.example.deviceidlab.runtime.DeviceProfile) {
+        fun synchronizeProfile(context: Context?, profile: DeviceProfile) {
             activeAndroidTestId = profile.androidId
             activeTelephonyTestId = profile.imei
             _currentAndroidTestIdFlow.value = profile.androidId
