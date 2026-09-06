@@ -262,10 +262,15 @@ class IdentityRuntimeVerificationTest {
         assertEquals(p2.wifiSsid, HostBridge.resolveActiveProfile().wifiSsid)
         assertNotEquals(p1.wifiSsid, ProfileStore.getActiveProfile().wifiSsid)
 
-        // 8. Verification EXPECTED uses activeProfile.wifiSsid
-        val bundle = ProfileStore.toBundle()
-        assertEquals(p2.wifiSsid, bundle.getString("wifi_ssid"))
-        assertEquals(p2.wifiSsid, bundle.getString(NPatchConfig.KEY_ACTIVE_WIFI_SSID))
+        // 8. Ensure ProfileStore represents Profile B consistently across all fields with no mixed state
+        val activeB = ProfileStore.getActiveProfile()
+        assertEquals(p2.wifiSsid, activeB.wifiSsid)
+        assertEquals(p2.androidId, activeB.androidId)
+        assertEquals(p2.imei, activeB.imei)
+        assertEquals(p2.macAddress, activeB.macAddress)
+        assertEquals(p2.testIpv4, activeB.testIpv4)
+        assertNotEquals(p1.androidId, activeB.androidId)
+        assertNotEquals(p1.testIpv4, activeB.testIpv4)
     }
 
     @Test

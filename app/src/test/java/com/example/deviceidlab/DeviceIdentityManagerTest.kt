@@ -450,6 +450,7 @@ class DeviceIdentityManagerTest {
             phoneNumber = "+1 (555) 111-1111",
             batteryHealth = 95,
             testIpv4 = "192.0.2.101",
+            wifiSsid = "Pixel7_WiFi_A7F2",
             state = ProfileState.AVAILABLE
         )
         val p2 = DeviceProfile(
@@ -468,6 +469,7 @@ class DeviceIdentityManagerTest {
             phoneNumber = "+1 (555) 222-2222",
             batteryHealth = 82,
             testIpv4 = "192.0.2.187",
+            wifiSsid = "GalaxyS23_WiFi_91C4",
             state = ProfileState.AVAILABLE
         )
 
@@ -478,6 +480,7 @@ class DeviceIdentityManagerTest {
         assertEquals("+1 (555) 111-1111", active1.phoneNumber)
         assertEquals(95, active1.batteryHealth)
         assertEquals("192.0.2.101", active1.testIpv4)
+        assertEquals("Pixel7_WiFi_A7F2", active1.wifiSsid)
 
         // Atomically switch to Beta
         val switchResult = manager.applyAndActivateProfile(p2)
@@ -490,6 +493,7 @@ class DeviceIdentityManagerTest {
         assertEquals("+1 (555) 222-2222", active2.phoneNumber)
         assertEquals(82, active2.batteryHealth)
         assertEquals("192.0.2.187", active2.testIpv4)
+        assertEquals("GalaxyS23_WiFi_91C4", active2.wifiSsid)
         assertEquals("SERIAL2222", active2.serialNumber)
 
         // Previous profile record holds exact pre-switch values
@@ -500,6 +504,7 @@ class DeviceIdentityManagerTest {
         assertEquals("+1 (555) 111-1111", prev.phoneNumber)
         assertEquals(95, prev.batteryHealth)
         assertEquals("192.0.2.101", prev.testIpv4)
+        assertEquals("Pixel7_WiFi_A7F2", prev.wifiSsid)
 
         assertEquals("PASS", manager.getProfileUniquenessStatus())
         assertEquals("PASS", manager.getProfileConsistencyStatus())
