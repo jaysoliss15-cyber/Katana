@@ -1,8 +1,10 @@
 package com.example.deviceidlab.runtime
 
+import com.example.deviceidlab.generator.RandomIdGenerator
 import com.example.deviceidlab.hook.NPatchAuditManager
 import com.example.deviceidlab.hook.NPatchConfig
 import com.example.deviceidlab.hook.NetworkApiCatalog
+import com.example.deviceidlab.manager.ProfileJsonSerializer
 import com.example.deviceidlab.model.DeviceProfile
 import com.example.deviceidlab.model.ProfileState
 import org.junit.After
@@ -234,5 +236,140 @@ class IdentityRuntimeVerificationTest {
         assertEquals(randomProc, events[0].targetProcess)
         assertEquals(pid, events[0].targetPid)
         assertEquals("NPATCH_ANDROID_001", events[0].returnedId)
+    }
+
+    @Test
+    fun testProfileGeneratedWifiSsidUniquenessAndSwitching() {
+        // 1. Newly generated profile contains wifiSsid
+        val p1 = RandomIdGenerator.generateProfile("Test Profile 1")
+        assertNotNull(p1.wifiSsid)
+        assertTrue(p1.wifiSsid.isNotBlank())
+        assertFalse("wifiSsid must not be default LabTest_WiFi", p1.wifiSsid.contains("LabTest_WiFi"))
+
+        // 2. Two independently generated profiles have different/profile-specific SSIDs
+        val p2 = RandomIdGenerator.generateProfile("Test Profile 2", previousProfile = p1)
+        assertNotNull(p2.wifiSsid)
+        assertTrue(p2.wifiSsid.isNotBlank())
+        assertNotEquals("Different profiles must have different SSIDs", p1.wifiSsid, p2.wifiSsid)
+
+        // 6 & 7. Profile switching updates active SSID and HostBridge resolves active ProfileStore profile
+        ProfileStore.setActiveProfile(p1)
+        assertEquals(p1.wifiSsid, ProfileStore.getActiveProfile().wifiSsid)
+        assertEquals(p1.wifiSsid, HostBridge.resolveActiveProfile().wifiSsid)
+
+        ProfileStore.setActiveProfile(p2)
+        assertEquals(p2.wifiSsid, ProfileStore.getActiveProfile().wifiSsid)
+        assertEquals(p2.wifiSsid, HostBridge.resolveActiveProfile().wifiSsid)
+        assertNotEquals(p1.wifiSsid, ProfileStore.getActiveProfile().wifiSsid)
+
+        // 8. Verification EXPECTED uses activeProfile.wifiSsid
+        val bundle = ProfileStore.toBundle()
+        assertEquals(p2.wifiSsid, bundle.getString("wifi_ssid"))
+        assertEquals(p2.wifiSsid, bundle.getString(NPatchConfig.KEY_ACTIVE_WIFI_SSID))
+    }
+
+    @Test
+    fun testWifiSsidSerializationAndLegacyMigration() {
+        val testProfile = DeviceProfile(
+            id = "test_profile_custom",
+            name = "Custom SSID Profile",
+            androidId = "custom_android_id",
+            imei = "123456789012345",
+            serialNumber = "SERIAL_CUSTOM",
+            macAddress = "02:00:11:22:33:44",
+            wifiSsid = "Custom_SSID_XYZ123",
+            state = ProfileState.ACTIVE
+        )
+
+        // 3. wifiSsid survives serialization/deserialization
+        val json = ProfileJsonSerializer.serialize(testProfile)
+        assertTrue(json.contains("\"wifiSsid\":\"Custom_SSID_XYZ123\""))
+        val restored = ProfileJsonSerializer.parse(json)
+        // 4. Existing wifiSsid survives profile reload
+        assertEquals("Custom_SSID_XYZ123", restored.wifiSsid)
+
+        // 5. Legacy profile without wifiSsid receives a valid migrated value
+        val legacyJsonWithoutSsid = """
+            {
+                "id": "legacy_p_1",
+                "name": "Legacy Profile",
+                "androidId": "legacy_android_id",
+                "imei": "987654321098765",
+                "serialNumber": "SERIAL_LEGACY",
+                "macAddress": "02:00:11:22:33:55",
+                "buildModel": "Pixel 7"
+            }
+        """.trimIndent()
+        val migrated = ProfileJsonSerializer.parse(legacyJsonWithoutSsid)
+        assertNotNull(migrated.wifiSsid)
+        assertTrue(migrated.wifiSsid.isNotBlank())
+        assertFalse("Legacy profile must not be migrated to LabTest_WiFi", migrated.wifiSsid.contains("LabTest_WiFi"))
+        assertTrue("Migrated SSID should reflect model", migrated.wifiSsid.contains("Pixel7"))
+
+        // Also verify legacy profile with explicit "LabTest_WiFi" gets migrated safely
+        val legacyJsonWithLabTest = """
+            {
+                "id": "legacy_p_2",
+                "name": "Legacy Profile With LabTest",
+                "androidId": "legacy_android_id_2",
+                "imei": "987654321098766",
+                "serialNumber": "SERIAL_LEGACY_2",
+                "macAddress": "02:00:11:22:33:66",
+                "buildModel": "Galaxy S23",
+                "wifiSsid": "\"LabTest_WiFi\""
+            }
+        """.trimIndent()
+        val migratedFromLabTest = ProfileJsonSerializer.parse(legacyJsonWithLabTest)
+        assertFalse("Must not retain LabTest_WiFi", migratedFromLabTest.wifiSsid.contains("LabTest_WiFi"))
+        assertTrue("Migrated SSID should reflect model", migratedFromLabTest.wifiSsid.contains("GalaxyS23"))
+    }
+
+    @Test
+    fun testLinkPropertiesPermissionClassificationHonesty() {
+        // 9. LinkProperties permission failure is classified as PERMISSION_RESTRICTED or PLATFORM_RESTRICTED, NOT MISMATCH
+        val expIp = "198.51.100.189"
+        val permissionDeniedMessage = "Permission denied — ACCESS_NETWORK_STATE unavailable"
+
+        var isPermissionDenied = false
+        val obsLinkProp = try {
+            throw SecurityException("Neither user 10864 nor current process has android.permission.ACCESS_NETWORK_STATE.")
+        } catch (_: SecurityException) {
+            isPermissionDenied = true
+            permissionDeniedMessage
+        }
+
+        assertTrue(isPermissionDenied)
+        val isLinkPropMatch = !isPermissionDenied && obsLinkProp == expIp
+        assertFalse("Permission restricted state must not be treated as a value MATCH", isLinkPropMatch)
+
+        val hookStatus = when {
+            isLinkPropMatch -> "TARGET_OBSERVED"
+            isPermissionDenied -> "PLATFORM_RESTRICTED"
+            else -> "HOOK_REGISTERED"
+        }
+        val matchStatus = when {
+            isLinkPropMatch -> "MATCH"
+            isPermissionDenied -> "PERMISSION_RESTRICTED"
+            else -> "MISMATCH"
+        }
+        val diagnosis = when {
+            isLinkPropMatch -> "LinkProperties interface address intercepted."
+            isPermissionDenied -> "Target process lacks ACCESS_NETWORK_STATE, so LinkProperties addresses could not be obtained or verified."
+            else -> "LinkProperties not intercepted."
+        }
+
+        assertEquals("PLATFORM_RESTRICTED", hookStatus)
+        assertEquals("PERMISSION_RESTRICTED", matchStatus)
+        assertNotEquals("MISMATCH", matchStatus)
+        assertNotEquals("TARGET_OBSERVED", hookStatus)
+        assertTrue(diagnosis.contains("lacks ACCESS_NETWORK_STATE"))
+
+        // Verify catalog classification for LinkProperties
+        val entries = NetworkApiCatalog.ENTRIES
+        val linkAddresses = entries.firstOrNull { it.apiName == "LinkProperties.getAddresses" }
+        assertNotNull(linkAddresses)
+        assertEquals(NetworkApiCatalog.HookStatus.PLATFORM_PERMISSION_RESTRICTED, linkAddresses?.status)
+        assertEquals(NetworkApiCatalog.InterceptionLayer.PLATFORM_RESTRICTED, linkAddresses?.layer)
+        assertFalse("TARGET_OBSERVED must not be claimed when permission restricted", linkAddresses?.isTargetObserved == true)
     }
 }

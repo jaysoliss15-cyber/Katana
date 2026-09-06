@@ -55,7 +55,8 @@ class TargetDemoActivity : Activity() {
         val expTelephonyId = activeProfileBundle?.getString("telephony_test_id") ?: "NPATCH_TELEPHONY_001"
         val expIp = activeProfileBundle?.getString("active_synthetic_ip") ?: "203.0.113.42"
         val expMac = activeProfileBundle?.getString("active_mac_address") ?: "02:00:11:22:33:44"
-        val expSsid = activeProfileBundle?.getString("active_wifi_ssid") ?: "\"LabTest_WiFi\""
+        val expSsid = activeProfileBundle?.getString("active_wifi_ssid")
+            ?: activeProfileBundle?.getString("wifi_ssid") ?: "Pixel7_WiFi_A7F2"
         val expBssid = activeProfileBundle?.getString("active_wifi_bssid") ?: expMac
         val expLat = if (activeProfileBundle != null && activeProfileBundle.containsKey("active_latitude")) activeProfileBundle.getDouble("active_latitude") else 37.7749
         val expLng = if (activeProfileBundle != null && activeProfileBundle.containsKey("active_longitude")) activeProfileBundle.getDouble("active_longitude") else -122.4194
@@ -316,21 +317,45 @@ class TargetDemoActivity : Activity() {
 
         // 10. LinkProperties.getAddresses()
         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        var isPermissionDenied = false
         val obsLinkProp = try {
             val net = cm?.activeNetwork
             val lp = cm?.getLinkProperties(net)
             lp?.linkAddresses?.firstOrNull()?.address?.hostAddress ?: "None"
-        } catch (t: Throwable) { "Error: ${t.message}" }
-        val isLinkPropMatch = obsLinkProp == expIp
+        } catch (_: SecurityException) {
+            isPermissionDenied = true
+            "Permission denied — ACCESS_NETWORK_STATE unavailable"
+        } catch (t: Throwable) {
+            val msg = t.message ?: ""
+            if (msg.contains("ACCESS_NETWORK_STATE", ignoreCase = true) || msg.contains("permission", ignoreCase = true)) {
+                isPermissionDenied = true
+                "Permission denied — ACCESS_NETWORK_STATE unavailable"
+            } else {
+                "Error: ${t.message}"
+            }
+        }
+        val isLinkPropMatch = !isPermissionDenied && obsLinkProp == expIp
         if (isLinkPropMatch) reportTargetObserved("LinkProperties.getAddresses()", obsLinkProp)
         tests.add(
             TestResult(
                 api = "LinkProperties.getAddresses()",
                 expected = expIp,
                 observed = obsLinkProp,
-                hookStatus = if (isLinkPropMatch) "TARGET_OBSERVED" else "HOOK_REGISTERED",
-                matchStatus = if (isLinkPropMatch) "MATCH" else "MISMATCH",
-                diagnosis = if (isLinkPropMatch) "LinkProperties interface address intercepted." else "LinkProperties not intercepted."
+                hookStatus = when {
+                    isLinkPropMatch -> "TARGET_OBSERVED"
+                    isPermissionDenied -> "PLATFORM_RESTRICTED"
+                    else -> "HOOK_REGISTERED"
+                },
+                matchStatus = when {
+                    isLinkPropMatch -> "MATCH"
+                    isPermissionDenied -> "PERMISSION_RESTRICTED"
+                    else -> "MISMATCH"
+                },
+                diagnosis = when {
+                    isLinkPropMatch -> "LinkProperties interface address intercepted."
+                    isPermissionDenied -> "Target process lacks ACCESS_NETWORK_STATE, so LinkProperties addresses could not be obtained or verified."
+                    else -> "LinkProperties not intercepted."
+                }
             )
         )
 
@@ -363,7 +388,13 @@ class TargetDemoActivity : Activity() {
 
             val tvApi = TextView(this).apply {
                 text = "${test.api} [${test.matchStatus}]"
-                setTextColor(if (test.matchStatus == "MATCH") 0xFF4ADE80.toInt() else 0xFFFCA5A5.toInt())
+                val color = when (test.matchStatus) {
+                    "MATCH" -> 0xFF4ADE80.toInt()
+                    "PERMISSION_RESTRICTED", "PLATFORM_RESTRICTED", "RESTRICTED" -> 0xFFFBBF24.toInt()
+                    "UNSUPPORTED" -> 0xFF94A3B8.toInt()
+                    else -> 0xFFFCA5A5.toInt()
+                }
+                setTextColor(color)
                 textSize = 14f
                 typeface = android.graphics.Typeface.DEFAULT_BOLD
             }

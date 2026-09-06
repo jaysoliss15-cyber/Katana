@@ -76,7 +76,7 @@ object NPatchConfig {
     const val RFC_5737_PREFIX = "203.0.113."
     const val DEFAULT_SYNTHETIC_IP = "203.0.113.42"
     const val DEFAULT_MAC = "02:00:11:22:33:44"
-    const val DEFAULT_SSID = "\"LabTest_WiFi\""
+    const val DEFAULT_SSID = "Pixel7_WiFi_A7F2"
     const val DEFAULT_BSSID = "02:00:11:22:33:44"
 
     // IP Classification Boundaries
@@ -140,8 +140,10 @@ object NPatchConfig {
         return "02:00:11:22:$b1:$b2"
     }
 
-    fun deriveWifiSsid(city: String): String {
-        return "\"LabTest_WiFi_$city\""
+    fun deriveWifiSsid(modelOrCity: String, seed: Long = 0L): String {
+        val clean = modelOrCity.replace(Regex("[^a-zA-Z0-9]"), "")
+        val suffix = "%04X".format(Math.abs(seed) % 0x10000)
+        return "${clean}_WiFi_$suffix"
     }
 
     /**

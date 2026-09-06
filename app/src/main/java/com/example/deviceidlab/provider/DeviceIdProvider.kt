@@ -190,7 +190,7 @@ class DeviceIdProvider : ContentProvider() {
 
             activeSyntheticIp = NPatchConfig.deriveSyntheticIp(seed)
             activeMacAddress = NPatchConfig.deriveMac(seed)
-            activeWifiSsid = NPatchConfig.deriveWifiSsid(loc.city)
+            activeWifiSsid = NPatchConfig.deriveWifiSsid(loc.city, seed)
             activeWifiBssid = activeMacAddress
             profileLifecycleState = NPatchConfig.STATE_ACTIVE
 

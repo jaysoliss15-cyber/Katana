@@ -69,6 +69,16 @@ object RandomIdGenerator {
         return health
     }
 
+    fun generateSyntheticWifiSsid(model: String = "Pixel 7", previousSsid: String? = null): String {
+        val cleanModel = model.replace(Regex("[^a-zA-Z0-9]"), "")
+        var ssid: String
+        do {
+            val suffix = generateRandomHex(4).uppercase()
+            ssid = "${cleanModel}_WiFi_$suffix"
+        } while (previousSsid != null && (ssid == previousSsid || ssid == previousSsid.trim('"')))
+        return ssid
+    }
+
     /**
      * Generates a synthetic documentation/test IPv4 address using RFC 5737 TEST-NET ranges:
      * - TEST-NET-1: 192.0.2.0/24 (192.0.2.1 .. 192.0.2.254)
@@ -104,6 +114,7 @@ object RandomIdGenerator {
         if (candidate.phoneNumber == previous.phoneNumber) return false
         if (candidate.batteryHealth == previous.batteryHealth) return false
         if (candidate.testIpv4 == previous.testIpv4) return false
+        if (candidate.wifiSsid.equals(previous.wifiSsid, ignoreCase = true)) return false
         return true
     }
 
@@ -135,6 +146,7 @@ object RandomIdGenerator {
             val phoneNumber = generateSyntheticPhoneNumber(previousProfile?.phoneNumber)
             val batteryHealth = generateBatteryHealth(previousProfile?.batteryHealth)
             val testIpv4 = generateSyntheticTestIpv4(previousProfile?.testIpv4)
+            val wifiSsid = generateSyntheticWifiSsid(model, previousProfile?.wifiSsid)
 
             val candidate = DeviceProfile(
                 id = id,
@@ -151,7 +163,8 @@ object RandomIdGenerator {
                 buildFingerprint = fingerprint,
                 phoneNumber = phoneNumber,
                 batteryHealth = batteryHealth,
-                testIpv4 = testIpv4
+                testIpv4 = testIpv4,
+                wifiSsid = wifiSsid
             )
 
             // Automated uniqueness check rejects profile if any required field is identical
@@ -171,6 +184,8 @@ object RandomIdGenerator {
         val nextPhone = "+1 (555) ${random.nextInt(899) + 100}-${random.nextInt(8999) + 1000}"
         val prevIpv4 = previousProfile?.testIpv4 ?: "192.0.2.1"
         val nextIpv4 = if (prevIpv4 == "192.0.2.101") "192.0.2.187" else "192.0.2.101"
+        val prevSsid = previousProfile?.wifiSsid ?: "Pixel7_WiFi_A7F2"
+        val nextSsid = if (prevSsid == "Pixel7_WiFi_A7F2") "GalaxyS23_WiFi_91C4" else "Pixel7_WiFi_A7F2"
 
         return DeviceProfile(
             id = id,
@@ -187,7 +202,8 @@ object RandomIdGenerator {
             buildFingerprint = "google/panther/panther:13/TQ3A.230901.001/$androidId:user/release-keys",
             phoneNumber = if (nextPhone == prevPhone) "+1 (555) 999-9999" else nextPhone,
             batteryHealth = nextHealth,
-            testIpv4 = nextIpv4
+            testIpv4 = nextIpv4,
+            wifiSsid = nextSsid
         )
     }
 }

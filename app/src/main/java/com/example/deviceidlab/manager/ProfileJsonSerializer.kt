@@ -71,7 +71,12 @@ object ProfileJsonSerializer {
         val phoneNumber = map["phoneNumber"]?.takeIf { it.isNotEmpty() } ?: "+1 (555) 234-5678"
         val batteryHealth = map["batteryHealth"]?.toIntOrNull() ?: 95
         val testIpv4 = map["testIpv4"]?.takeIf { it.isNotEmpty() } ?: "192.0.2.101"
-        val wifiSsid = map["wifiSsid"]?.takeIf { it.isNotEmpty() } ?: "\"LabTest_WiFi\""
+        val rawSsid = map["wifiSsid"]?.takeIf { it.isNotEmpty() && it != "\"LabTest_WiFi\"" && it != "LabTest_WiFi" }
+        val wifiSsid = rawSsid ?: run {
+            val model = map["buildModel"]?.takeIf { it.isNotEmpty() } ?: "Pixel 7"
+            val seed = (map["androidId"] ?: map["id"] ?: "0").hashCode().toLong()
+            com.example.deviceidlab.hook.NPatchConfig.deriveWifiSsid(model, seed)
+        }
         val bssid = map["bssid"]?.takeIf { it.isNotEmpty() } ?: "02:00:11:22:33:44"
         val latitude = map["latitude"]?.toDoubleOrNull() ?: 37.7749
         val longitude = map["longitude"]?.toDoubleOrNull() ?: -122.4194

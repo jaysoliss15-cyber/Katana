@@ -68,6 +68,7 @@ class MainActivity : AppCompatActivity() {
                 phoneNumber = "+1 (555) 234-5678",
                 batteryHealth = 95,
                 testIpv4 = "192.0.2.101",
+                wifiSsid = "Pixel7_WiFi_A7F2",
                 state = ProfileState.AVAILABLE
             )
             val result = identityManager.applyAndActivateProfile(p1)
@@ -91,6 +92,7 @@ class MainActivity : AppCompatActivity() {
                 phoneNumber = "+1 (555) 876-5432",
                 batteryHealth = 82,
                 testIpv4 = "192.0.2.187",
+                wifiSsid = "GalaxyS23_WiFi_91C4",
                 state = ProfileState.AVAILABLE
             )
             val result = identityManager.applyAndActivateProfile(p2)

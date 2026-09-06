@@ -470,13 +470,13 @@ object NetworkInterceptionAdapter {
             XposedHelpers.findAndHookMethod(wifiClass, classLoader, "getSSID", object : XC_MethodHook() {
                 override fun beforeHookedMethod(param: MethodHookParam) {
                     val profile = HostBridge.resolveActiveProfile()
-                    val quotedSsid = "\"${profile.wifiSsid}\""
+                    val targetSsid = profile.wifiSsid
                     param.throwable = null
-                    param.result = quotedSsid
+                    param.result = targetSsid
                     HostBridge.reportInterceptionStage(
                         targetPkg = packageName, targetProc = processName, targetPid = pid,
                         apiName = "WifiInfo.getSSID()", stage = NPatchAuditManager.VALUE_RETURNED,
-                        origVal = "<unknown ssid>", injectedVal = quotedSsid, returnedVal = quotedSsid
+                        origVal = "<unknown ssid>", injectedVal = targetSsid, returnedVal = targetSsid
                     )
                 }
             })
